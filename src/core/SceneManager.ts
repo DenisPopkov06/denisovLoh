@@ -237,17 +237,26 @@ function isGravestoneLikeObjectId(objectId: string): boolean {
   return !!entry && entry.repairableStates.length > 0 && entry.collisionRadius !== undefined;
 }
 
-/** Переносимый мелкий предмет заданий (горшок, цветы) — тоже кандидат на рандомизацию
- *  "где он стоит", но отдельной группой от надгробий (другой габарит). Венки сюда
- *  намеренно не входят — у них позиция/поворот в layout.json совпадают с конкретным
- *  слотом надгробия (висят на нём), и это должно остаться так после перестановки. */
-function isPickupObjectId(objectId: string): boolean {
-  const entry = OBJECTS_CATALOG[objectId];
-  if (!entry || !entry.interactable || entry.repairableStates.length === 0 || entry.collisionRadius !== undefined) {
-    return false;
-  }
-  return !objectId.startsWith("wreath_");
+type ItemKind = "pot" | "flowers" | "wreath";
+
+function itemKindOf(objectId: string): ItemKind | null {
+  if (objectId === "pot_clay_a") return "pot";
+  if (objectId.startsWith("flowers_")) return "flowers";
+  if (objectId.startsWith("wreath_")) return "wreath";
+  return null;
 }
+
+// Фиксированный слот каждого вида предмета относительно его надгробия — локальные
+// (x, z) в осях камня (x: вправо от грани, z: вперёд по повороту камня), одинаковый
+// на любом камне. Венок — вплотную к лицевой грани (как и был задуман изначально,
+// см. objects.catalog.ts: "лицом к +Z, стоят на хвостах ленты — прислонить к
+// надгробию"); горшок и цветы — по бокам перед камнем, подальше друг от друга и от
+// венка, чтобы три предмета на одном надгробии не перекрывали друг друга.
+const ITEM_SLOTS: Record<ItemKind, { x: number; z: number }> = {
+  wreath: { x: 0, z: 0.14 },
+  pot: { x: 0.45, z: 0.25 },
+  flowers: { x: -0.45, z: 0.25 },
+};
 
 function shuffleInPlace<T>(items: T[]): void {
   for (let i = items.length - 1; i > 0; i--) {
@@ -308,19 +317,20 @@ export class SceneManager {
    *  независимо от прыжка и сводит на нет vaultable/vaultRequiresSprint: круг
    *  разрешает перепрыгнуть, а луч по той же геометрии тут же блокирует снова. */
   private readonly circleCoveredMeshes = new Set<THREE.Object3D>();
-  /** Венок → надгробие, у основания которого он стоит (ближайшее на момент загрузки
-   *  зоны, из АВТОРСКОЙ раскладки до любых перемешиваний) + локальный оффсет в его
-   *  осях. Надгробия перемешиваются между собой каждую смену (reshufflePlacedObjects),
-   *  а венки — нет (их "слот" жёстко привязан дизайнером к конкретному месту у
-   *  конкретного камня, см. objects.catalog.ts). Раньше венок оставался в СТАРОМ
-   *  слоте, где после перемешивания мог оказаться совсем другой тип камня (у´же/шире
-   *  исходного) — вплотную-подгонка на 0.14м либо проваливалась внутрь нового камня,
-   *  либо зависала с явным зазором. Теперь венок каждую смену пересчитывается заново
-   *  относительно СВОЕГО камня, где бы тот ни оказался (repositionWreaths). */
-  private readonly wreathAnchors = new Map<
-    string,
-    { gravestoneInstanceId: string; offsetX: number; offsetZ: number; rotationOffset: number }
-  >();
+  /** Горшок/цветы/венок → надгробие, у которого он стоит (ближайшее на момент загрузки
+   *  зоны, из АВТОРСКОЙ раскладки до любых перемешиваний). Надгробия перемешиваются
+   *  между собой каждую смену (reshufflePlacedObjects); эти мелкие предметы раньше
+   *  либо оставались на СТАРОМ слоте (венки) — после перемешивания там мог оказаться
+   *  совсем другой камень (уже/шире исходного), венок либо проваливался внутрь, либо
+   *  зависал с зазором, — либо перемешивались отдельной группой МЕЖДУ СОБОЙ (горшки,
+   *  цветы), из-за чего у каждого камня предметы вставали как попало (сбоку, спереди,
+   *  сзади — какой угодно оригинальный оффсет достался камню по жребию). Теперь у
+   *  каждого вида предмета ОДИН фиксированный слот относительно камня (ITEM_SLOTS) —
+   *  одинаковый на любом надгrobии, целом или нет, и любом его положении после
+   *  перемешивания (repositionPairedItems). DISPLACED по-прежнему сдвигает предмет в
+   *  сторону от этого слота (applyFallbackTransform) — так разница "на месте/сдвинуто"
+   *  остаётся понятной. */
+  private readonly itemAnchors = new Map<string, { gravestoneInstanceId: string; kind: ItemKind }>();
   /** Ссылки нужны, чтобы менять яркость по ходу смен (applyShiftDarkness) —
    *  createAmbientFill()/createMoonLight() добавляются в сцену один раз насовсем,
    *  зона потом грузится/выгружается поверх, без пересоздания света. */
@@ -440,7 +450,7 @@ export class SceneManager {
     this.zoneRoot = zoneRoot;
     this.currentZoneId = layout.zoneId;
     this.currentLayout = layout;
-    this.computeWreathAnchors(layout.objects);
+    this.computeItemAnchors(layout.objects);
   }
 
   private async spawnPlacedObject(placed: PlacedObject, parent: THREE.Group): Promise<void> {
@@ -490,7 +500,7 @@ export class SceneManager {
     this.staticCollisionCircles.length = 0;
     this.staticCollisionRects.length = 0;
     this.circleCoveredMeshes.clear();
-    this.wreathAnchors.clear();
+    this.itemAnchors.clear();
     this.zoneLights.length = 0;
     this.interactableObjects.length = 0;
     this.objectsById.clear();
@@ -534,8 +544,7 @@ export class SceneManager {
   reshufflePlacedObjects(): void {
     if (!this.currentLayout) return;
     this.shuffleGroupPositions(isGravestoneLikeObjectId);
-    this.shuffleGroupPositions(isPickupObjectId);
-    this.repositionWreaths();
+    this.repositionPairedItems();
   }
 
   /** Постепенное затемнение по сменам (ambientIntensityForShift/moonIntensityForShift —
@@ -566,19 +575,21 @@ export class SceneManager {
     });
   }
 
-  /** Считает для каждого венка ближайшее (на момент загрузки, по авторской раскладке)
-   *  надгробие и локальный оффсет до него (в осях камня) — см. wreathAnchors. */
-  private computeWreathAnchors(objects: readonly PlacedObject[]): void {
-    this.wreathAnchors.clear();
+  /** Считает для каждого горшка/цветов/венка ближайшее (на момент загрузки, по
+   *  авторской раскладке) надгробие — см. itemAnchors. Сам слот (ITEM_SLOTS) не
+   *  зависит от того, где именно предмет изначально стоял — только от вида. */
+  private computeItemAnchors(objects: readonly PlacedObject[]): void {
+    this.itemAnchors.clear();
     const gravestones = objects.filter((o) => isGravestoneLikeObjectId(o.objectId));
-    for (const wreath of objects) {
-      if (!wreath.objectId.startsWith("wreath_")) continue;
+    for (const item of objects) {
+      const kind = itemKindOf(item.objectId);
+      if (!kind) continue;
 
       let nearest: PlacedObject | null = null;
       let nearestDistSq = Infinity;
       for (const grave of gravestones) {
-        const dx = wreath.position.x - grave.position.x;
-        const dz = wreath.position.z - grave.position.z;
+        const dx = item.position.x - grave.position.x;
+        const dz = item.position.z - grave.position.z;
         const distSq = dx * dx + dz * dz;
         if (distSq < nearestDistSq) {
           nearestDistSq = distSq;
@@ -586,47 +597,40 @@ export class SceneManager {
         }
       }
       if (!nearest) continue;
-
-      const dx = wreath.position.x - nearest.position.x;
-      const dz = wreath.position.z - nearest.position.z;
-      const graveRad = THREE.MathUtils.degToRad(nearest.rotationY);
-      const cos = Math.cos(-graveRad);
-      const sin = Math.sin(-graveRad);
-      this.wreathAnchors.set(wreath.instanceId, {
-        gravestoneInstanceId: nearest.instanceId,
-        offsetX: dx * cos - dz * sin,
-        offsetZ: dx * sin + dz * cos,
-        rotationOffset: wreath.rotationY - nearest.rotationY,
-      });
+      this.itemAnchors.set(item.instanceId, { gravestoneInstanceId: nearest.instanceId, kind });
     }
   }
 
-  /** Пересчитывает место каждого венка относительно ЕГО камня на новой, только что
-   *  перемешанной позиции (см. wreathAnchors) — вызывать сразу после того, как
-   *  shuffleGroupPositions(isGravestoneLikeObjectId) расставил камни по новым местам. */
-  private repositionWreaths(): void {
+  /** Ставит каждый горшок/цветы/венок в его фиксированный слот (ITEM_SLOTS) у ЕГО
+   *  камня на новой, только что перемешанной позиции (см. itemAnchors) — вызывать
+   *  сразу после того, как shuffleGroupPositions(isGravestoneLikeObjectId) расставил
+   *  камни по новым местам. Один и тот же слот на любом камне — так у всех целых
+   *  надгробий горшок/цветы/венок стоят одинаково, независимо от того, где их
+   *  изначально расставил дизайнер и где камень оказался после перемешивания. */
+  private repositionPairedItems(): void {
     if (!this.currentLayout) return;
     const byInstanceId = new Map(this.currentLayout.objects.map((o) => [o.instanceId, o]));
 
-    for (const [wreathInstanceId, anchor] of this.wreathAnchors) {
-      const wreath = byInstanceId.get(wreathInstanceId);
+    for (const [itemInstanceId, anchor] of this.itemAnchors) {
+      const item = byInstanceId.get(itemInstanceId);
       const grave = byInstanceId.get(anchor.gravestoneInstanceId);
-      if (!wreath || !grave) continue;
+      if (!item || !grave) continue;
 
+      const slot = ITEM_SLOTS[anchor.kind];
       const graveRad = THREE.MathUtils.degToRad(grave.rotationY);
       const cos = Math.cos(graveRad);
       const sin = Math.sin(graveRad);
-      wreath.position = {
-        x: grave.position.x + anchor.offsetX * cos - anchor.offsetZ * sin,
-        y: wreath.position.y,
-        z: grave.position.z + anchor.offsetX * sin + anchor.offsetZ * cos,
+      item.position = {
+        x: grave.position.x + slot.x * cos - slot.z * sin,
+        y: item.position.y,
+        z: grave.position.z + slot.x * sin + slot.z * cos,
       };
-      wreath.rotationY = grave.rotationY + anchor.rotationOffset;
+      item.rotationY = grave.rotationY;
 
-      const instance = this.objectsById.get(wreathInstanceId);
+      const instance = this.objectsById.get(itemInstanceId);
       if (!instance) continue;
-      instance.position.set(wreath.position.x, wreath.position.y, wreath.position.z);
-      instance.rotation.y = THREE.MathUtils.degToRad(wreath.rotationY);
+      instance.position.set(item.position.x, item.position.y, item.position.z);
+      instance.rotation.y = THREE.MathUtils.degToRad(item.rotationY);
     }
   }
 
