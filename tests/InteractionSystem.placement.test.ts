@@ -20,6 +20,7 @@ const LAYOUT: ZoneLayout = {
   objects: [
     { instanceId: "g1", objectId: "gravestone_cross_a", position: { x: 0, y: 0, z: 0 }, rotationY: 0, defaultState: ObjectState.NORMAL },
     { instanceId: "pot1", objectId: "pot_clay_a", position: { x: 1.5, y: 0, z: -1.5 }, rotationY: 0, defaultState: ObjectState.NORMAL },
+    { instanceId: "flowers1", objectId: "flowers_daisy_a", position: { x: -1.5, y: 0, z: 1.5 }, rotationY: 0, defaultState: ObjectState.NORMAL },
   ],
 };
 
@@ -27,51 +28,55 @@ function makeLoader(): AssetLoader {
   return { loadModel: () => Promise.resolve({ scene: new THREE.Group(), animations: [] }) } as unknown as AssetLoader;
 }
 
-/** Настраивает сцену с одним надгробием и горшком (уже расставленным по слоту ITEM_SLOTS
- * через reshufflePlacedObjects), InteractionSystem, где горшок УЖЕ "в руках" у игрока
- * (минуя подбор/наведение — они не часть этого теста). */
-async function setup() {
+/** Настраивает сцену с одним надгробием и всеми переносимыми предметами (уже
+ * расставленными по слотам ITEM_SLOTS через reshufflePlacedObjects), InteractionSystem,
+ * где указанный предмет УЖЕ "в руках" у игрока (минуя подбор/наведение — они не часть
+ * этого теста). Общая логика постановки (радиус, слот) не зависит от типа предмета —
+ * поэтому один и тот же сетап обслуживает и горшок, и цветы. */
+async function setup(carriedInstanceId: string) {
   const stateMachine = new ObjectStateMachine();
   const shiftManager = new ShiftManager(stateMachine);
   const sceneManager = new SceneManager(makeLoader(), stateMachine);
   await sceneManager.loadZone(LAYOUT);
-  sceneManager.reshufflePlacedObjects(); // расставляет pot1 в слот "справа спереди" у g1
+  sceneManager.reshufflePlacedObjects(); // расставляет оба предмета по их слотам у g1
 
   const camera = new THREE.PerspectiveCamera();
   const interaction = new InteractionSystem(camera, stateMachine, shiftManager, sceneManager);
 
-  stateMachine.transition("pot1", ObjectState.MISSING); // как будто игрок уже его подобрал
+  stateMachine.transition(carriedInstanceId, ObjectState.MISSING); // как будто игрок уже подобрал
 
-  const potObject = sceneManager.getObjectByInstanceId("pot1")!;
+  const object = sceneManager.getObjectByInstanceId(carriedInstanceId)!;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (interaction as any).carriedObject = potObject;
+  (interaction as any).carriedObject = object;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (interaction as any).carriedInstanceId = "pot1";
+  (interaction as any).carriedInstanceId = carriedInstanceId;
 
-  const anchor = sceneManager.getAnchorTransform("pot1")!;
+  const anchor = sceneManager.getAnchorTransform(carriedInstanceId)!;
   return { stateMachine, sceneManager, interaction, camera, anchor };
 }
 
-describe("InteractionSystem: куда реально можно поставить переносимый предмет", () => {
+describe.each([
+  { label: "горшок", instanceId: "pot1", oppositeOf: { x: -0.45, z: -0.25 } }, // ITEM_SLOTS.pot = (0.45, 0.25)
+  { label: "цветы", instanceId: "flowers1", oppositeOf: { x: 0.45, z: -0.25 } }, // ITEM_SLOTS.flowers = (-0.45, 0.25)
+])("InteractionSystem: куда реально можно поставить $label", ({ instanceId, oppositeOf }) => {
   it("засчитывает постановку, когда игрок стоит у ПРАВИЛЬНОЙ стороны камня (у слота предмета)", async () => {
-    const { stateMachine, interaction, camera, anchor } = await setup();
+    const { stateMachine, interaction, camera, anchor } = await setup(instanceId);
 
     // Игрок стоит максимально близко к слоту (но не ВНУТРИ камня — упирается в его
     // коллизию, ~0.75м от центра камня в реальной игре; здесь просто у самого якоря).
     camera.position.set(anchor.position.x + 0.1, 1.6, anchor.position.z + 0.1);
     interaction.interact();
 
-    expect(stateMachine.getState("pot1")).toBe(ObjectState.NORMAL);
+    expect(stateMachine.getState(instanceId)).toBe(ObjectState.NORMAL);
   });
 
   it("НЕ засчитывает постановку с противоположной стороны камня, хоть и рядом с ним", async () => {
-    const { stateMachine, interaction, camera } = await setup();
+    const { stateMachine, interaction, camera } = await setup(instanceId);
 
-    // Слот горшка — (0.45, 0.25) от центра g1 (ITEM_SLOTS.pot); противоположная точка
-    // у камня — примерно (-0.45, -0.25), на таком же расстоянии от камня, но не от слота.
-    camera.position.set(-0.45, 1.6, -0.25);
+    // Точка на таком же расстоянии от камня, что и слот, но с противоположной стороны.
+    camera.position.set(oppositeOf.x, 1.6, oppositeOf.z);
     interaction.interact();
 
-    expect(stateMachine.getState("pot1")).toBe(ObjectState.MISSING);
+    expect(stateMachine.getState(instanceId)).toBe(ObjectState.MISSING);
   });
 });
