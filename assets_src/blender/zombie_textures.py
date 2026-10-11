@@ -14,9 +14,9 @@ import zone_lib as Z
 
 SIZE = 512
 # кожа — камуфляж чётких плоских ячеек: хаки, песочный, оливковый, тёмно-оливковый, бурый, почти чёрно-бурый (sRGB, вес)
-SKIN_CELLS = [((0.64, 0.56, 0.40), 0.34), ((0.70, 0.62, 0.45), 0.20), ((0.58, 0.51, 0.36), 0.22), ((0.50, 0.46, 0.31), 0.12),
-              ((0.40, 0.32, 0.23), 0.09), ((0.26, 0.20, 0.14), 0.03)]
-CLOTH_PALETTE = [(0.34, 0.28, 0.23), (0.27, 0.22, 0.18), (0.41, 0.34, 0.27), (0.31, 0.29, 0.27), (0.21, 0.17, 0.14)]
+SKIN_CELLS = [((0.60, 0.54, 0.43), 0.34), ((0.66, 0.59, 0.47), 0.20), ((0.55, 0.50, 0.39), 0.22), ((0.47, 0.44, 0.34), 0.12),
+              ((0.40, 0.32, 0.25), 0.09), ((0.25, 0.20, 0.15), 0.03)]
+CLOTH_PALETTE = [(0.38, 0.31, 0.26), (0.30, 0.25, 0.21), (0.45, 0.37, 0.30), (0.34, 0.31, 0.29), (0.24, 0.20, 0.17)]
 
 
 def _smoothstep(a, b, x):
@@ -168,9 +168,10 @@ def make_textures():
 
 
 def make_materials():
-    """mat_zombie_skin / cloth (текстура × цвет вершин), mat_zombie_misc (цвет вершин: кости, зубы, металл), mat_zombie_eyes."""
+    """mat_zombie_skin / cloth (текстура × цвет вершин), mat_zombie_misc (цвет вершин: кости, зубы, металл), глаза и их яркая сердцевина."""
     skin = Z.tile_material("mat_zombie_skin", "zombie_skin", culling=True, vcolor=True)
     cloth = Z.tile_material("mat_zombie_cloth", "zombie_cloth", culling=False, vcolor=True)
     misc = Z.flat_material("mat_zombie_misc", rough=0.8, vcolor=True)
-    eyes = Z.flat_material("mat_zombie_eyes", (0.05, 0.05, 0.05), rough=0.4, emission=((0.44, 0.46, 0.42), 1.0))
-    return [skin, cloth, misc, eyes]
+    eyes = Z.flat_material("mat_zombie_eyes", (0.05, 0.05, 0.05), rough=0.4, emission=((0.34, 0.37, 0.34), 0.8))
+    core = Z.flat_material("mat_zombie_eyes_core", (0.05, 0.05, 0.05), rough=0.4, emission=((0.62, 0.67, 0.62), 0.9))
+    return [skin, cloth, misc, eyes, core]

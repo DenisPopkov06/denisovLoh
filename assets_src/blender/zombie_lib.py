@@ -45,16 +45,16 @@ JOINTS = {"pelvis": (NAME, (0, 0, 0)), "chest": ("pelvis", (0, 0, 0.10)), "head"
           "foot_l": ("shin_l", (0, 0, -B.SHIN_LEN)), "foot_r": ("shin_r", (0, 0, -B.SHIN_LEN))}
 
 # поза (градусы; вперёд для «вверх-торчащих» частей — +X, для свисающих — −X; ноги — через IK)
-POSE = dict(pelvis_pos=(0.0, -0.04, 0.885), pelvis=(10, 0, 3), chest=(34, 0, -5), head=(-24, 5, 8), jaw=(0, 0, 0),
-            upper_l=(-22, -12, 0), upper_r=(-28, 11, 0), fore_l=(-46, 0, 0), fore_r=(-40, 0, 0), hand_l=(-14, 0, 0), hand_r=(-20, 0, 0),
-            foot_l=(0.190, -0.17, 20), foot_r=(-0.170, 0.11, -24))
+POSE = dict(pelvis_pos=(0.0, -0.02, 0.945), pelvis=(8, 0, 3), chest=(30, 0, -5), head=(-22, 4, 8), jaw=(0, 0, 0),
+            upper_l=(-26, -22, 0), upper_r=(-30, 20, 0), fore_l=(-50, 0, 0), fore_r=(-44, 0, 0), hand_l=(-14, 0, 0), hand_r=(-20, 0, 0),
+            foot_l=(0.290, -0.15, 18), foot_r=(-0.265, 0.15, -20))
 
 
 def part(key):
     return bpy.data.objects[f"{NAME}_{key}"]
 
 
-def build_zombie(M=None, pose=True, seed=66):
+def build_zombie(M=None, pose=True, seed=66, ao=True):
     """Создаёт (заново) пустышку-корень и 16 частей с шарнирами; возвращает число треугольников."""
     for m in (ZT,):
         importlib.reload(m)
@@ -64,7 +64,7 @@ def build_zombie(M=None, pose=True, seed=66):
     for me in list(bpy.data.meshes):
         if me.name.startswith(NAME + "_") and me.users == 0:
             bpy.data.meshes.remove(me)
-    mats = [bpy.data.materials.get(n) for n in ("mat_zombie_skin", "mat_zombie_cloth", "mat_zombie_misc", "mat_zombie_eyes")]
+    mats = [bpy.data.materials.get(n) for n in ("mat_zombie_skin", "mat_zombie_cloth", "mat_zombie_misc", "mat_zombie_eyes", "mat_zombie_eyes_core")]
     if not all(mats):
         ZT.make_textures()
         mats = ZT.make_materials()
@@ -86,6 +86,8 @@ def build_zombie(M=None, pose=True, seed=66):
     bpy.context.view_layer.update()
     if pose:
         apply_pose()
+        if ao:
+            bake_ao()
     return {"tris": tris, "parts": len(MAKERS)}
 
 
@@ -140,6 +142,59 @@ def apply_pose(P=None):
     low = min((o.matrix_world @ v.co).z for k in ("foot_l", "foot_r") for o in (part(k),) for v in o.data.vertices)
     top = max((o.matrix_world @ v.co).z for k in MAKERS for o in (part(k),) for v in o.data.vertices)
     return {"lowest_sole": round(low - root.z, 3), "top": round(top - root.z, 3)}
+
+
+# ============================================================================ запекание окклюзии (AO) в цвет граней
+def bake_ao(samples=22, dist=0.28, strength=0.72, seed=5):
+    """AO по граням: лучи по полусфере на собранной модели в позе; цвет граней множится на (1 − strength·(1 − AO)).
+    Двусторонняя ткань и кожа считаются с обеих сторон (берётся более открытая) — внешняя сторона светлее внутренней."""
+    import random
+    from mathutils.bvhtree import BVHTree
+    rnd = random.Random(seed)
+    bpy.context.view_layer.update()
+    objs = [part(k) for k in MAKERS]
+    verts, polys = [], []
+    for o in objs:
+        M = o.matrix_world
+        base = len(verts)
+        verts += [M @ v.co for v in o.data.vertices]
+        polys += [tuple(base + i for i in p.vertices) for p in o.data.polygons]
+    tree = BVHTree.FromPolygons(verts, polys, epsilon=1e-6)
+    dirs = []                                                               # косинус-взвешенные направления в локальном кадре (z — по нормали)
+    for i in range(samples):
+        u, v = (i + 0.5) / samples, (i * 0.618034) % 1.0
+        r, th = math.sqrt(u), math.tau * v
+        dirs.append(Vector((r * math.cos(th), r * math.sin(th), math.sqrt(max(0.0, 1.0 - u)))))
+    done = 0
+    for o in objs:
+        me = o.data
+        attr = me.color_attributes.get("Color")
+        if attr is None:
+            continue
+        M3 = o.matrix_world.to_3x3()
+        for poly in me.polygons:
+            c = o.matrix_world @ poly.center
+            n = (M3 @ poly.normal).normalized()
+            best = 0.0
+            for sgn in (1.0, -1.0):
+                nn = n * sgn
+                t = nn.cross(Vector((0, 0, 1)) if abs(nn.z) < 0.9 else Vector((1, 0, 0))).normalized()
+                b = nn.cross(t)
+                rot = rnd.uniform(0, math.tau)
+                cr, sr = math.cos(rot), math.sin(rot)
+                hits = 0
+                for d in dirs:
+                    dx, dy = d.x * cr - d.y * sr, d.x * sr + d.y * cr
+                    w = t * dx + b * dy + nn * d.z
+                    if tree.ray_cast(c + nn * 0.004, w, dist)[0] is not None:
+                        hits += 1
+                best = max(best, 1.0 - hits / samples)
+            f = 1.0 - strength * (1.0 - best)
+            for li in poly.loop_indices:
+                col = attr.data[li].color
+                attr.data[li].color = (col[0] * f, col[1] * f, col[2] * f, col[3])
+        done += len(me.polygons)
+    return done
 
 
 # ============================================================================ просмотр

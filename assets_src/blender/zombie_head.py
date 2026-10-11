@@ -1,39 +1,45 @@
-"""Голова зомби по арт-листу («Крупный план (голова)»): круглый гладкий череп, глубокие круглые глазницы с костным ободом и тяжёлой
-бровью, бледно-серые светящиеся глаза, маленький костяной нос с ноздрями, рот-овал «крика» с мелкими неровными зубами, впалые щёки,
-острый подбородок, настоящие уши с завитком, тонкая шея.
+"""Голова зомби по листу «Голова зомби — ракурсы»: большой круглый череп-купол, глубокие глазницы-«скруглённые квадраты» с костным
+ободом и тяжёлой бровью, бледные светящиеся глаза со светлым центром, грушевидная носовая полость, рот с ровными прямоугольными
+зубами сверху и снизу и опущенной челюстью, впалые щёки, острые скулы, настоящие уши с завитком, трещины на коже.
 
 part_head() / part_jaw() возвращают bmesh в системе части: начало — основание черепа на шее (head) / сустав челюсти (jaw), перёд — −Y.
-Размеры — метры, уже в итоговом масштабе (голова от макушки до подбородка ≈ 0.30 м). Нижняя челюсть построена уже в опущенном
+Размеры — метры, уже в итоговом масштабе (голова от макушки до подбородка ≈ 0.295 м). Нижняя челюсть построена в опущенном
 положении (рот открыт), поэтому в позе её не вращают. Кожа — текстура (UV считаются в конце), раны, кости и тени — цвет вершин.
 
-Раскладка по высоте (z от основания черепа): макушка 0.215, надбровье 0.100, глаза 0.072, скулы 0.040, кончик носа 0.025,
-линия верхних зубов 0.000, подбородок −0.096 (рот открыт).
+Пропорции сняты с каркаса на листе (доля высоты от макушки): глаза 58%, низ носа 78%, зубы 87–95%, подбородок 100%;
+ширина черепа ≈ 0.70 высоты, глубина ≈ 0.80. Координаты ниже даны до HEAD_SCALE.
 """
 import math
 
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 import zone_lib as Z
 import zombie_geo as G
-from zombie_geo import BONE, BONE_DK, DARK, EYE, EYE_COL, GUM, MISC, MOUTH, SKIN, frames, lerp, skin_f
+from zombie_geo import (BONE, BONE_DK, DARK, DARK_BLUE, EYE, EYE2, EYE_COL, GUM, MISC, MOUTH, SKIN, frames, lerp, skin_f)
 
 V = Vector
-JAW_PIVOT = (0.0, 0.020, 0.030)                  # сустав челюсти в системе головы
+HEAD_SCALE = 0.95
+JAW_PIVOT = (0.0, 0.020 * HEAD_SCALE, 0.030 * HEAD_SCALE)       # сустав челюсти в системе головы
 
-# сечения черепа: (z, полуширина, вынос вперёд, вынос назад); перёд −Y. Сужается книзу, как настоящий череп.
-SKULL = [(0.205, 0.018, 0.020, 0.022), (0.196, 0.048, 0.050, 0.060), (0.180, 0.070, 0.072, 0.092), (0.153, 0.084, 0.082, 0.106),
-         (0.127, 0.088, 0.088, 0.112), (0.097, 0.088, 0.092, 0.108), (0.070, 0.082, 0.092, 0.094), (0.044, 0.073, 0.088, 0.082),
-         (0.020, 0.057, 0.084, 0.064), (0.000, 0.043, 0.070, 0.050)]
+# сечения черепа: (z, полуширина, вынос вперёд, вынос назад); перёд −Y. Большой купол, сужение книзу к скулам и верхней челюсти.
+SKULL = [(0.222, 0.020, 0.022, 0.024), (0.212, 0.056, 0.056, 0.070), (0.194, 0.080, 0.082, 0.104), (0.166, 0.094, 0.092, 0.122),
+         (0.138, 0.099, 0.098, 0.128), (0.108, 0.098, 0.102, 0.124), (0.080, 0.094, 0.102, 0.110), (0.050, 0.088, 0.100, 0.098),
+         (0.022, 0.080, 0.096, 0.086), (-0.004, 0.066, 0.090, 0.072), (-0.028, 0.050, 0.082, 0.058), (-0.044, 0.042, 0.074, 0.050)]
+WX, WF, WB = 1.17, 1.06, 1.14                   # масштаб ширины, выноса вперёд и назад (череп шире и глубже, как на листе)
+SKULL = [(z, rx * WX, rf * WF, rb * WB) for z, rx, rf, rb in SKULL]
 SEG_SKULL = 40
-DENSE_RINGS = 46                                 # плотный череп прореживается до ~TARGET_TRIS треугольников
-TARGET_TRIS = 620
-EYES = ((-0.038, 0.064), (0.038, 0.064))         # (x, z) глазниц
-SOCKET_R = 0.0255                                # радиус отверстия глазницы
+DENSE_RINGS = 52                                 # плотный череп прореживается до ~TARGET_TRIS треугольников
+TARGET_TRIS = 780
+EYES = ((-0.047, 0.048), (0.047, 0.048))         # (x, z) глазниц
+SOCKET_R = 0.0265                                # радиус отверстия глазницы (восьмиугольник)
+NOSE = (0.008, 0.0170)                           # носовая полость: (z центра, R); острие вверх, вытянута по высоте ×1.5
 
 
-def _skull_ring(z, rx, rf, rb, n=2.2):
+def _skull_ring(z, rx, rf, rb, n=None):
+    n = n or (2.0 + 0.4 * G.smooth(0.12, -0.02, z))             # купол — почти эллипс, к челюсти чуть квадратнее
     pts = []
     for k in range(SEG_SKULL):
         t = k * math.tau / SEG_SKULL
@@ -45,7 +51,7 @@ def _skull_ring(z, rx, rf, rb, n=2.2):
 
 
 def skull_color(p):
-    """Череп: хаки-кожа, лоб и макушка чуть светлее, вокруг глазниц и во впалых щеках — тени, на висках — проплешины до кости."""
+    """Череп: хаки-кожа, лоб и макушка светлее, вокруг глазниц и во впалых щеках — тени, на висках — проплешины до кости."""
     x, y, z = p
     c = skin_f(p, 3)
     t = G.noise(x * 2.4, y * 2.0, z * 2.8, 11)
@@ -54,9 +60,9 @@ def skull_color(p):
     if y < -0.03:
         for ex, ez in EYES:
             d = math.hypot(x - ex, z - ez)
-            c = tuple(v * (1.0 - 0.22 * math.exp(-(d / 0.034) ** 2)) for v in c)           # лёгкие тени вокруг глаз
-        sh = math.exp(-(math.hypot(abs(x) - 0.048, z - 0.012) / 0.026) ** 2)
-        c = tuple(v * (1.0 - 0.38 * sh) for v in c)                                         # впалые щёки темнее
+            c = tuple(v * (1.0 - 0.10 * math.exp(-(d / 0.036) ** 2)) for v in c)           # лёгкие тени вокруг глаз
+        sh = math.exp(-(math.hypot(abs(x) - 0.052, z + 0.008) / 0.028) ** 2)
+        c = tuple(v * (1.0 - 0.12 * sh) for v in c)                                         # впалые щёки чуть темнее
     return c
 
 
@@ -69,22 +75,21 @@ def ring_dent(verts, c, r0, w, d, axis):
             v.co += ax * (d * k)
 
 
-def boolean_cut(bm, cutters):
-    """Вычитает из bm тела-вырезы (список bmesh) булевой операцией Blender; возвращает новый bmesh (атрибуты сохраняются)."""
-    me = bpy.data.meshes.new("_zh_skull")
+def _eval_modifiers(bm, setup, extra=()):
+    """bmesh → временный объект → модификаторы (setup(ob, extras)) → bmesh результата (атрибуты сохраняются)."""
+    me = bpy.data.meshes.new("_zh_tmp")
     bm.to_mesh(me)
-    ob = bpy.data.objects.new("_zh_skull", me)
+    ob = bpy.data.objects.new("_zh_tmp", me)
     Z.collection().objects.link(ob)
     junk = [ob]
-    for i, cb in enumerate(cutters):
-        cme = bpy.data.meshes.new(f"_zh_cut{i}")
+    for i, cb in enumerate(extra):
+        cme = bpy.data.meshes.new(f"_zh_x{i}")
         cb.to_mesh(cme)
         cb.free()
-        co = bpy.data.objects.new(f"_zh_cut{i}", cme)
+        co = bpy.data.objects.new(f"_zh_x{i}", cme)
         Z.collection().objects.link(co)
         junk.append(co)
-        mod = ob.modifiers.new(f"cut{i}", "BOOLEAN")
-        mod.operation, mod.solver, mod.object = "DIFFERENCE", "EXACT", co
+    setup(ob, junk[1:])
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
     nm = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
@@ -100,32 +105,45 @@ def boolean_cut(bm, cutters):
 
 
 def decimate(bm, ratio):
-    """Прореживает bmesh модификатором Decimate (collapse, симметрия по X): остаются острые края черт лица, плоское сливается в крупные грани."""
-    me = bpy.data.meshes.new("_zh_dec")
-    bm.to_mesh(me)
-    ob = bpy.data.objects.new("_zh_dec", me)
-    Z.collection().objects.link(ob)
-    mod = ob.modifiers.new("dec", "DECIMATE")
-    mod.decimate_type, mod.ratio = "COLLAPSE", ratio
-    mod.use_collapse_triangulate = True
-    mod.use_symmetry, mod.symmetry_axis = True, "X"
-    bpy.context.view_layer.update()
-    dg = bpy.context.evaluated_depsgraph_get()
-    nm = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
-    out = bmesh.new()
-    out.from_mesh(nm)
-    bpy.data.meshes.remove(nm)
-    bpy.data.objects.remove(ob, do_unlink=True)
-    bpy.data.meshes.remove(me)
-    bm.free()
-    return out
+    """Decimate (collapse, симметрия по X): остаются острые края черт лица, плоское сливается в крупные грани."""
+    def setup(ob, _):
+        mod = ob.modifiers.new("dec", "DECIMATE")
+        mod.decimate_type, mod.ratio = "COLLAPSE", ratio
+        mod.use_collapse_triangulate = True
+        mod.use_symmetry, mod.symmetry_axis = True, "X"
+    return _eval_modifiers(bm, setup)
 
 
-def _cone_cutter(c, rot_z, r_front, r_back, depth):
-    """Конус-вырез вдоль оси Y (узким концом внутрь головы): c — центр, поворот вокруг Z — чтобы смотрел чуть наружу."""
+def boolean_cut(bm, cutters):
+    """Вычитает из bm тела-вырезы (список bmesh) булевой операцией Blender."""
+    def setup(ob, cobs):
+        for i, co in enumerate(cobs):
+            mod = ob.modifiers.new(f"cut{i}", "BOOLEAN")
+            mod.operation, mod.solver, mod.object = "DIFFERENCE", "EXACT", co
+    return _eval_modifiers(bm, setup, cutters)
+
+
+def _socket_cutter(c, rot_z, r_front, r_back, depth):
+    """Восьмиугольный конус-вырез вдоль оси Y (узким концом внутрь): c — центр, поворот вокруг Z — чтобы смотрел чуть наружу."""
     cb = bmesh.new()
-    M = Matrix.Translation(c) @ Matrix.Rotation(rot_z, 4, "Z") @ Matrix.Rotation(math.pi / 2, 4, "X")
-    bmesh.ops.create_cone(cb, cap_ends=True, segments=14, radius1=r_back, radius2=r_front, depth=depth, matrix=M)
+    M = (Matrix.Translation(c) @ Matrix.Rotation(rot_z, 4, "Z") @ Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Rotation(math.pi / 8, 4, "Z"))
+    bmesh.ops.create_cone(cb, cap_ends=True, segments=8, radius1=r_back, radius2=r_front, depth=depth, matrix=M)
+    return cb
+
+
+def _nose_cutter(zc, R, depth):
+    """Треугольная призма острием вверх (груша носового отверстия, вытянута по высоте ×1.5): вершины заданы явно. Вырез идёт вдоль Y."""
+    cb = bmesh.new()
+    top, base, hw = zc + R * 1.5, zc - R * 0.75, R * 0.866
+    y0, y1 = -0.083 - depth / 2, -0.083 + depth / 2
+    f0 = [cb.verts.new((0, y0, top)), cb.verts.new((-hw, y0, base)), cb.verts.new((hw, y0, base))]
+    f1 = [cb.verts.new((0, y1, top)), cb.verts.new((-hw, y1, base)), cb.verts.new((hw, y1, base))]
+    cb.faces.new(f0)
+    cb.faces.new(f1[::-1])
+    for i in range(3):
+        j = (i + 1) % 3
+        cb.faces.new((f0[i], f0[j], f1[j], f1[i]))
+    bmesh.ops.recalc_face_normals(cb, faces=list(cb.faces))
     return cb
 
 
@@ -149,14 +167,6 @@ def dense_rings():
     return out
 
 
-def _tri_cutter(c, R, depth):
-    """Треугольная призма (острием вверх) вдоль оси Y — вырез носовой полости; c — центр, R — радиус описанной окружности."""
-    cb = bmesh.new()
-    M = Matrix.Translation(c) @ Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Rotation(math.pi / 2, 4, "Z")
-    bmesh.ops.create_cone(cb, cap_ends=True, segments=3, radius1=R, radius2=R, depth=depth, matrix=M)
-    return cb
-
-
 def part_head(rnd):
     bm = bmesh.new()
     rings = [_skull_ring(*r) for r in dense_rings()]
@@ -165,117 +175,161 @@ def part_head(rnd):
 
     # ---- рельеф лица (вмятины и выпуклости, симметрично)
     for sx in (-1, 1):
-        G.dent(verts, (sx * 0.038, -0.091, 0.064), 0.031, 0.016, (0, 1, 0))                      # западение вокруг глазницы
-        ring_dent(verts, (sx * 0.038, -0.095, 0.064), 0.031, 0.010, -0.011, (0, 1, 0))           # костный обод глазницы
-        G.dent(verts, (sx * 0.037, -0.096, 0.094), 0.028, -0.024, (0, 1, 0))                     # тяжёлая бровь
-        G.dent(verts, (sx * 0.068, -0.074, 0.036), 0.023, -0.021, (sx * 0.6, 1, 0))              # скула
-        G.dent(verts, (sx * 0.082, -0.040, 0.048), 0.020, -0.010, (sx, 0.4, 0))                  # скуловая дуга к уху
-        G.dent(verts, (sx * 0.050, -0.066, 0.008), 0.023, 0.032, (-sx * 0.7, 0.8, 0))            # впалая щека
-        G.dent(verts, (sx * 0.087, -0.035, 0.092), 0.028, 0.016, (-sx, 0, 0))                    # висок
-    G.dent(verts, (0, -0.098, 0.092), 0.020, -0.008, (0, 1, 0))                                  # межбровье
-    G.dent(verts, (0, -0.096, 0.050), 0.016, 0.010, (0, 1, 0))                                   # переносица
-    G.dent(verts, (0, -0.100, 0.172), 0.040, 0.010, (0, 1, 0))                                   # лоб скошен
+        G.dent(verts, (sx * 0.047, -0.102, 0.048), 0.036, 0.018, (0, 1, 0))                      # западение вокруг глазницы
+        ring_dent(verts, (sx * 0.047, -0.106, 0.048), 0.034, 0.012, -0.014, (0, 1, 0))           # костный обод глазницы
+        G.dent(verts, (sx * 0.047, -0.108, 0.077), 0.032, -0.028, (0, 1, 0))                     # тяжёлая бровь
+        G.dent(verts, (sx * 0.084, -0.083, 0.014), 0.026, -0.026, (sx * 0.6, 1, 0))              # скула
+        G.dent(verts, (sx * 0.103, -0.047, 0.030), 0.022, -0.012, (sx, 0.4, 0))                  # скуловая дуга к уху
+        G.dent(verts, (sx * 0.062, -0.075, -0.014), 0.026, 0.036, (-sx * 0.7, 0.8, 0))           # впалая щека
+        G.dent(verts, (sx * 0.108, -0.044, 0.080), 0.032, 0.020, (-sx, 0, 0))                    # висок
+    G.dent(verts, (0, -0.110, 0.075), 0.022, -0.010, (0, 1, 0))                                  # межбровье
+    G.dent(verts, (0, -0.108, 0.034), 0.018, 0.012, (0, 1, 0))                                   # переносица
+    G.dent(verts, (0, -0.110, 0.192), 0.044, 0.012, (0, 1, 0))                                   # лоб скошен
 
-    # ---- крупные грани: прореживание плотного черепа, затем круглые глазницы (булева операция)
+    # ---- крупные грани: прореживание плотного черепа, затем глазницы и носовая полость (булева операция)
     bm = decimate(bm, min(1.0, TARGET_TRIS / max(1, sum(len(f.verts) - 2 for f in bm.faces))))
-    cuts = [_cone_cutter((sx * 0.038, -0.082, 0.064), sx * 0.10, SOCKET_R, SOCKET_R * 0.78, 0.075) for sx in (-1, 1)]
-    cuts.append(_tri_cutter((0, -0.078, 0.030), 0.0175, 0.050))
+    cuts = [_socket_cutter((sx * 0.047, -0.091, 0.048), sx * 0.10, SOCKET_R, SOCKET_R * 0.80, 0.075) for sx in (-1, 1)]
+    cuts.append(_nose_cutter(*NOSE[:1], NOSE[1], 0.050))
     bm = boolean_cut(bm, cuts)
     G.paint(bm, list(bm.faces), skull_color, rnd, SKIN, 0.15)
 
-    def in_hole(p):
-        if p.y > -0.040:
-            return False
-        if any(math.hypot(p.x - ex, p.z - ez) <= SOCKET_R + 0.0005 for ex, ez in EYES):
-            return True
-        return 0.0200 <= p.z <= 0.0480 and abs(p.x) <= 0.0152 * (0.0480 - p.z) / 0.0280 + 0.0008      # носовая полость (острие вверх)
+    def in_socket(p):
+        return p.y < -0.040 and any(math.hypot(p.x - ex, p.z - ez) <= SOCKET_R + 0.0005 for ex, ez in EYES)
 
-    for f in bm.faces:                                                      # стенки и дно вырезов — чёрные (грань целиком внутри)
-        if all(in_hole(v.co) for v in f.verts):
-            G.paint(bm, [f], DARK, rnd, SKIN, 0.0)
+    def in_nose(p, tol):
+        zc, R = NOSE
+        top, base = zc + R * 1.5, zc - R * 0.75
+        return -0.118 < p.y < -0.046 and base - tol <= p.z <= top + tol and abs(p.x) <= 0.3849 * (top - p.z) + tol
 
-    # ---- глаза: бледно-серые светящиеся шары, утоплены в глазницах; тяжёлые веки-брови слегка прикрывают верх
+    for f in bm.faces:                                                      # стенки и дно вырезов — тёмная сине-серая полость
+        c = f.calc_center_median()
+        if all(in_socket(v.co) for v in f.verts) or (in_nose(c, 0.0015) and all(in_nose(v.co, 0.0045) for v in f.verts)):
+            G.paint(bm, [f], DARK_BLUE, rnd, SKIN, 0.0)
+
+    # ---- костные гребни, спроецированные на поверхность черепа: обод глазниц, надбровная дуга, скуловые дуги
+    tree = BVHTree.FromBMesh(bm)
+    BONE_SKIN = lambda p: tuple(c * 1.03 for c in skin_f(p, 9))
+
+    def surf(x, z, off=0.0):
+        hit = tree.ray_cast(V((x, -0.32, z)), V((0, 1, 0)))
+        return None if hit[0] is None else hit[0] + V((0, -off, 0))
+
+    def ridge(pts, r, closed=False, seg=5):
+        P = [surf(x, z, r * 0.10) for x, z in pts]
+        P = [q for q in P if q is not None]
+        if closed and len(P) > 2:
+            P.append(P[0].copy())
+        if len(P) < 2:
+            return
+        fr = frames(P, (0, -1, 0))
+        rings = [G.ring(q, N, B, r, r, seg, rnd=rnd, jit=0.08) for (T, N, B), q in zip(fr, P)]
+        faces_, rv_ = G.bridge(bm, rings, SKIN, BONE_SKIN, rnd, caps=(not closed, not closed), closed=True)
+        if closed:
+            bmesh.ops.remove_doubles(bm, verts=list({v for r_ in rv_ for v in r_}), dist=1e-5)
+
+    for ex, ez in EYES:
+        ridge([(ex + (SOCKET_R + 0.0030) * math.cos(t), ez + (SOCKET_R + 0.0030) * math.sin(t)) for t in [k * math.tau / 14 for k in range(14)]],
+              0.0046, closed=True)
     for sx in (-1, 1):
-        G.blob(bm, rnd, (sx * 0.038, -0.060, 0.063), (0.0150, 0.0125, 0.0150), EYE_COL, EYE, sub=2, jitter=0.0)
-        G.box(bm, rnd, (sx * 0.039, -0.080, 0.087), (0.040, 0.010, 0.0075), lambda p: tuple(c * 0.95 for c in skin_f(p, 8)),
-              rot=(0.0, -sx * 0.30, 0.0), mi=SKIN)
+        ridge([(sx * 0.064, 0.020), (sx * 0.082, 0.018), (sx * 0.098, 0.028), (sx * 0.110, 0.036)], 0.0065)
 
-    # ---- нос: полость вырезана; над ней — тонкая костяная спинка
-    G.tube(bm, rnd, [V((0, -0.090, 0.066)), V((0, -0.095, 0.058)), V((0, -0.094, 0.052))], [(0.003, 0.0045), (0.0050, 0.0065), (0.0045, 0.0070)],
+    # ---- трещины на коже: тонкие тёмные канавки, спроецированные на поверхность
+    def crack(pts, r=0.0017):
+        P = [surf(x, z, -0.0006) for x, z in pts]
+        P = [q for q in P if q is not None]
+        if len(P) > 1:
+            G.tube(bm, rnd, P, [r] * len(P), 3, SKIN, (0.035, 0.030, 0.025), caps=(True, True))
+
+    crack([(0.016, 0.200), (0.026, 0.180), (0.014, 0.162), (0.018, 0.146)])
+    crack([(0.026, 0.180), (0.046, 0.172), (0.060, 0.158)])
+    crack([(-0.076, 0.034), (-0.068, 0.014), (-0.074, -0.006), (-0.064, -0.020)])
+    crack([(0.070, 0.106), (0.080, 0.088), (0.074, 0.070)])
+
+    # ---- глаза: крупные бледно-серые мягко светящиеся шары, глубоко в глазницах + светлая сердцевина
+    for sx in (-1, 1):
+        G.blob(bm, rnd, (sx * 0.047, -0.049, 0.047), (0.0190, 0.0155, 0.0190), EYE_COL, EYE, sub=2, jitter=0.0)
+        G.blob(bm, rnd, (sx * 0.047, -0.0635, 0.047), (0.0088, 0.0040, 0.0088), (1, 1, 1), EYE2, sub=2, jitter=0.0)
+
+    # ---- нос: тонкая костяная спинка над полостью
+    G.tube(bm, rnd, [V((0, -0.103, 0.068)), V((0, -0.107, 0.056)), V((0, -0.105, 0.044))], [(0.003, 0.0045), (0.0052, 0.0068), (0.0045, 0.0074)],
            4, SKIN, lambda p: skin_f(p, 7), up=(0, -1, 0), caps=(True, True))
 
-    # ---- уши: C-образный завиток, внутренняя чаша, мочка
+    # ---- уши
     for sx in (-1, 1):
         ear(bm, rnd, sx)
 
-    # ---- верхние зубы, десна, тёмная полость рта
-    arc = [V((0.027 * math.sin(t), -0.030 - 0.038 * math.cos(t), 0.003)) for t in [(-1.15 + 2.3 * i / 12) for i in range(13)]]
-    G.tube(bm, rnd, arc, [(0.0040, 0.0050)] * len(arc), 5, MISC, GUM, caps=(True, True))
-    teeth_arc(bm, rnd, (0, -0.030, 0.003), 0.027, 0.038, 8, -1.15, 1.15, 0.020, True)
-    G.blob(bm, rnd, (0, -0.018, -0.030), (0.028, 0.026, 0.022), DARK, MISC, sub=1, jitter=0.04)
+    # ---- верхняя челюсть: массивный костный блок под носом, десна, ровные зубы, тёмная полость рта
+    arc_pts = [(0.036 * math.sin(t), -0.038 - 0.046 * math.cos(t)) for t in [(-1.10 + 2.20 * i / 14) for i in range(15)]]
+    G.tube(bm, rnd, [V((x, y, -0.014)) for x, y in arc_pts], [(0.0070, 0.0105)] * 15, 6, SKIN, lambda p: tuple(c * 1.06 for c in skin_f(p, 9)),
+           up=(0, 0, 1), caps=(True, True), jit=0.04)
+    G.tube(bm, rnd, [V((x, y - 0.002, -0.0235)) for x, y in arc_pts], [(0.0038, 0.0052)] * 15, 5, MISC, GUM, caps=(True, True))
+    teeth_arc(bm, rnd, (0, -0.038, -0.0215), 0.036, 0.046, 9, -1.10, 1.10, 0.0165, True)
+    G.blob(bm, rnd, (0, -0.030, -0.048), (0.038, 0.034, 0.024), DARK, MISC, sub=1, jitter=0.04)
 
     # ---- шея внутри черепа (стык с шеей туловища)
-    G.tube(bm, rnd, [V((0, 0.012, 0.015)), V((0, 0.014, -0.050))], [(0.034, 0.036)] * 2, 8, SKIN, lambda p: skin_f(p, 2), up=(0, -1, 0),
+    G.tube(bm, rnd, [V((0, 0.012, -0.020)), V((0, 0.014, -0.080))], [(0.040, 0.042)] * 2, 8, SKIN, lambda p: skin_f(p, 2), up=(0, -1, 0),
            caps=(False, True))
     G.facet(bm, rnd)
+    bmesh.ops.scale(bm, vec=(HEAD_SCALE,) * 3, verts=bm.verts)
     G.uv_pass(bm)
     return bm
 
 
 def ear(bm, rnd, sx):
-    """Ухо на уровне глаз–носа, прижато к черепу позади скулы, смотрит наружу и чуть вперёд."""
-    cx, cy, cz = sx * 0.076, 0.018, 0.044
-    a = sx * 0.42
+    """Крупное ухо: толстая пластина, высокий завиток по краю, тёмная чаша, козелок, мочка — плотно прижато к черепу позади скулы."""
+    cx, cy, cz = sx * 0.097, 0.022, 0.036
+    a = sx * 0.30
     ca, sa = math.cos(a), math.sin(a)
 
     def P(x, y, z):                                                         # x — наружу, y — назад, z — вверх (локально)
         xx = sx * x
         return V((cx + xx * ca - y * sa, cy + xx * sa + y * ca, cz + z))
 
-    G.blob(bm, rnd, P(0.007, 0.004, 0.0), (0.0065, 0.019, 0.031), lambda p: tuple(c * 0.9 for c in skin_f(p, 5)), SKIN, jitter=0.07, rot=(0, 0, a))   # пластина
-    loop = [P(0.013, 0.004 + 0.018 * math.cos(t), 0.030 * math.sin(t)) for t in [k * math.tau / 10 for k in range(10)]]
+    G.blob(bm, rnd, P(0.004, 0.002, 0.0), (0.0140, 0.024, 0.036), lambda p: tuple(c * 0.92 for c in skin_f(p, 5)), SKIN, jitter=0.07, rot=(0, 0, a))   # пластина
+    loop = [P(0.014, 0.003 + 0.023 * math.cos(t), 0.035 * math.sin(t)) for t in [k * math.tau / 10 for k in range(10)]]
     loop.append(loop[0].copy())
     rings = []
     for (T, N, B), p in zip(frames(loop, (sx * ca, sx * sa, 0)), loop):
-        rings.append(G.ring(p, N, B, 0.0050, 0.0050, 5, rnd=rnd, jit=0.05))
+        rings.append(G.ring(p, N, B, 0.0075, 0.0075, 5, rnd=rnd, jit=0.06))
     faces, rv = G.bridge(bm, rings, SKIN, lambda p: skin_f(p, 5), rnd, caps=(False, False), closed=True)
     bmesh.ops.remove_doubles(bm, verts=list({v for r in rv for v in r}), dist=1e-5)                                       # завиток
-    G.blob(bm, rnd, P(0.0105, 0.005, 0.002), (0.0040, 0.0100, 0.0175), lambda p: tuple(c * 0.55 for c in skin_f(p, 5)), SKIN, jitter=0.08, rot=(0, 0, a))   # чаша
-    G.blob(bm, rnd, P(0.010, 0.004, -0.030), (0.0070, 0.0080, 0.0090), lambda p: skin_f(p, 5), SKIN, jitter=0.10, rot=(0, 0, a))                    # мочка
+    G.blob(bm, rnd, P(0.012, 0.006, 0.002), (0.0050, 0.0140, 0.0240), lambda p: tuple(c * 0.40 for c in skin_f(p, 5)), SKIN, jitter=0.08, rot=(0, 0, a))   # чаша
+    G.blob(bm, rnd, P(0.013, -0.012, -0.006), (0.0070, 0.0075, 0.0100), lambda p: skin_f(p, 5), SKIN, jitter=0.10, rot=(0, 0, a))                   # козелок
+    G.blob(bm, rnd, P(0.011, 0.004, -0.036), (0.0085, 0.0095, 0.0110), lambda p: skin_f(p, 5), SKIN, jitter=0.10, rot=(0, 0, a))                    # мочка
 
 
 def teeth_arc(bm, rnd, c, rx, ry, n, a0, a1, h, upper):
-    """Ряд мелких неровных зубов по дуге эллипса (перёд — −Y): разной длины, клыки острее, часть обломана; цвет старой кости."""
+    """Ряд ровных прямоугольных зубов по дуге эллипса (перёд — −Y): резцы шире, клыки чуть острее, цвет слоновой кости с желтизной."""
     for i in range(n):
         t = a0 + (a1 - a0) * (i + 0.5) / n
         x = c[0] + rx * math.sin(t)
         y = c[1] - ry * math.cos(t)
-        k = 1.25 if i in (1, n - 2) else 1.0                                              # клыки длиннее
-        if rnd.random() < 0.12:
-            k = 0.45                                                                       # обломанный зуб
-        hh = h * k * rnd.uniform(0.75, 1.10)
-        w = 0.0085 if abs(t) < 0.55 else 0.0075
-        col = G.mix(BONE, BONE_DK, rnd.uniform(0.0, 0.55))
+        mid = abs(t) < 0.45
+        canine = abs(abs(t) - 0.62 * (a1 - a0) / 2.0) < 0.2 and not mid and i in (1, n - 2)
+        hh = h * (1.12 if canine else 1.0) * rnd.uniform(0.88, 1.05)
+        w = 0.0098 if mid else 0.0086
+        col = G.mix(BONE, BONE_DK, rnd.uniform(0.0, 0.40))
         sgn = -1 if upper else 1
-        G.box(bm, rnd, (x, y, c[2] + sgn * (hh / 2 - 0.001)), (w, 0.0055, hh), col,
-              rot=(math.pi if upper else 0.0, rnd.uniform(-0.15, 0.15), -t), taper=(0.22, 0.45))
+        G.box(bm, rnd, (x, y, c[2] + sgn * (hh / 2 - 0.001)), (w, 0.0062, hh), col,
+              rot=(math.pi if upper else 0.0, rnd.uniform(-0.05, 0.05), -t), taper=(0.80 if not canine else 0.45, 0.85))
 
 
 def part_jaw(rnd):
-    """Нижняя челюсть в опущенном положении: U-образная «лента» — подбородок и щёки до скул (рот-овал), мелкие зубы, тёмный язык.
-    Шарнир — у ушей; геометрия строится в системе головы и сдвигается на −JAW_PIVOT."""
+    """Нижняя челюсть в опущенном положении: U-образная «лента» — подбородок и щёки до скул (рот-овал), ровные зубы, тёмный язык.
+    Шарнир — у ушей; геометрия строится в системе головы (до HEAD_SCALE) и сдвигается на −JAW_PIVOT."""
     bm = bmesh.new()
-    # (|x|, y, z центра, a вертикальная, b толщина): ветви челюсти поднимаются под скулы, спереди — низкий подбородок
-    P = [(0.040, 0.022, 0.014, 0.030, 0.007), (0.038, 0.016, -0.010, 0.044, 0.008), (0.035, 0.002, -0.034, 0.046, 0.009),
-         (0.028, -0.026, -0.050, 0.036, 0.009), (0.017, -0.050, -0.062, 0.020, 0.009), (0.007, -0.063, -0.066, 0.014, 0.010)]
+    # (|x|, y, z центра, a вертикальная, b толщина): ветви челюсти поднимаются под скулы, спереди — короткий острый подбородок
+    P = [(0.056, 0.026, 0.018, 0.030, 0.008), (0.056, 0.020, -0.012, 0.046, 0.009), (0.049, 0.004, -0.040, 0.044, 0.010),
+         (0.038, -0.026, -0.060, 0.032, 0.010), (0.022, -0.056, -0.074, 0.016, 0.010), (0.008, -0.070, -0.078, 0.011, 0.011)]
     left = [V((-x, y, z)) for x, y, z, a, b in P]
     right = [V((x, y, z)) for x, y, z, a, b in reversed(P)]
     rad = [(a, b) for x, y, z, a, b in P]
     G.tube(bm, rnd, left + right, rad + list(reversed(rad)), 6, SKIN, lambda p: skin_f(p, 4), up=(0, 0, 1), caps=(True, True), jit=0.06)
-    teeth_arc(bm, rnd, (0, -0.030, -0.052), 0.024, 0.035, 7, -1.05, 1.05, 0.016, False)
-    G.blob(bm, rnd, (0, -0.036, -0.050), (0.015, 0.022, 0.006), MOUTH, MISC, sub=1, jitter=0.05)                      # язык
+    teeth_arc(bm, rnd, (0, -0.036, -0.074), 0.033, 0.043, 9, -1.10, 1.10, 0.0145, False)
+    G.blob(bm, rnd, (0, -0.042, -0.068), (0.018, 0.024, 0.006), MOUTH, MISC, sub=1, jitter=0.05)                      # язык
     for v in bm.verts:
-        v.co -= V(JAW_PIVOT)
+        v.co -= V((0.0, 0.020, 0.030))
     G.facet(bm, rnd)
+    bmesh.ops.scale(bm, vec=(HEAD_SCALE,) * 3, verts=bm.verts)
     G.uv_pass(bm)
     return bm
