@@ -11,6 +11,10 @@ export interface HUDState {
   interactionPrompt: string | null;
   pointerLocked: boolean;
   staminaPercent: number;
+  healthPercent: number;
+  /** Скрыта, пока зомби ещё не появился (ZombieSystem) — показывать полоску жизней
+   *  раньше времени нечего, угрозы для неё ещё нет. */
+  healthVisible: boolean;
 }
 
 const LOW_TIME_THRESHOLD_SEC = 30;
@@ -36,9 +40,13 @@ export class HUD {
   private readonly promptEl: HTMLElement;
   private readonly pointerLockHint: HTMLElement;
   private readonly staminaBar: HTMLElement;
+  private readonly healthBar: HTMLElement;
+  private readonly healthEl: HTMLElement;
 
   private lastChargePercent = -1;
   private lastStaminaPercent = -1;
+  private lastHealthPercent = -1;
+  private lastHealthVisible: boolean | null = null;
   private lastPointerLocked: boolean | null = null;
   private lastTimerText = "";
   private lastTasksSignature = "";
@@ -79,9 +87,16 @@ export class HUD {
     this.staminaBar.className = "hud__stamina-bar";
     stamina.appendChild(this.staminaBar);
 
+    this.healthEl = document.createElement("div");
+    this.healthEl.className = "hud__health";
+    this.healthBar = document.createElement("div");
+    this.healthBar.className = "hud__health-bar";
+    this.healthEl.appendChild(this.healthBar);
+
     this.root.append(
       flashlight,
       stamina,
+      this.healthEl,
       this.flashlightHint,
       this.timerEl,
       this.taskListEl,
@@ -99,6 +114,7 @@ export class HUD {
     this.setInteractionPrompt(state.interactionPrompt);
     this.setPointerLockHint(state.pointerLocked);
     this.setStamina(state.staminaPercent);
+    this.setHealth(state.healthPercent, state.healthVisible);
   }
 
   private setFlashlightCharge(percent: number): void {
@@ -113,6 +129,18 @@ export class HUD {
     if (rounded === this.lastStaminaPercent) return;
     this.lastStaminaPercent = rounded;
     this.staminaBar.style.width = `${rounded}%`;
+  }
+
+  private setHealth(percent: number, visible: boolean): void {
+    if (visible !== this.lastHealthVisible) {
+      this.lastHealthVisible = visible;
+      this.healthEl.style.display = visible ? "" : "none";
+    }
+    const rounded = Math.round(Math.max(0, Math.min(100, percent)));
+    if (rounded === this.lastHealthPercent) return;
+    this.lastHealthPercent = rounded;
+    this.healthBar.style.width = `${rounded}%`;
+    this.healthEl.classList.toggle("hud__health--low", rounded <= 30);
   }
 
   /** Подсказка клавиши видна, пока игрок ни разу не включил фонарик — он выключен

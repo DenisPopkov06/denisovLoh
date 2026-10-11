@@ -73,4 +73,28 @@ describe("ShiftManager", () => {
     stateMachine.transition("vase_01", ObjectState.NORMAL);
     expect(onShiftEnd).toHaveBeenCalledTimes(1);
   });
+
+  it("failShift('caught_by_zombie') ends the shift once and ignores further calls", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onShiftEnd = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, onShiftEnd);
+    shiftManager.startShift(makeConfig());
+
+    shiftManager.failShift("caught_by_zombie");
+    expect(onShiftEnd).toHaveBeenCalledTimes(1);
+    expect(onShiftEnd).toHaveBeenCalledWith("caught_by_zombie");
+
+    shiftManager.failShift("caught_by_zombie");
+    shiftManager.update(0);
+    expect(onShiftEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("failShift() is a no-op before any shift has started", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onShiftEnd = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, onShiftEnd);
+
+    shiftManager.failShift("caught_by_zombie");
+    expect(onShiftEnd).not.toHaveBeenCalled();
+  });
 });

@@ -343,6 +343,11 @@ export class SceneManager {
    *  гаснуть по ходу смен (applyShiftDarkness), иначе двор у дома/фонаря остаётся
    *  ярко освещённым независимо от общего затемнения (см. localLightFactorForShift). */
   private readonly zoneLights: { light: THREE.Light; baseIntensity: number }[] = [];
+  /** Зомби (ZombieSystem) — отдельный актёр, не часть layout.objects/задач смены:
+   *  появляется не сразу (DifficultyScaler.ZOMBIE_APPEARS_AT_SHIFT), переживает смену
+   *  зон (зона грузится один раз за игровую сессию, см. main.ts) и не перемешивается
+   *  вместе с надгробиями (reshufflePlacedObjects). */
+  private zombieInstance: THREE.Object3D | null = null;
 
   constructor(
     private readonly assetLoader: AssetLoader,
@@ -502,6 +507,7 @@ export class SceneManager {
     this.circleCoveredMeshes.clear();
     this.itemAnchors.clear();
     this.zoneLights.length = 0;
+    this.zombieInstance = null;
     this.interactableObjects.length = 0;
     this.objectsById.clear();
     this.baseObjectIdByInstance.clear();
@@ -837,5 +843,79 @@ export class SceneManager {
    *  раз при загрузке зоны, забор не двигается и не меняет состояние. */
   getCollisionRects(): readonly CollisionRect[] {
     return this.staticCollisionRects;
+  }
+
+  // --- Зомби (ZombieSystem) ---------------------------------------------------
+
+  /** Спавнит зомби в сцене (не более одного за раз — повторный вызов, пока он уже
+   *  есть, игнорируется). Модель берётся из OBJECTS_CATALOG["zombie_walker_a"] —
+   *  та же запись каталога, что у дизайнера, с уже готовой зацикленной анимацией
+   *  ходьбы (см. SESSION_SUMMARY.md: единственный клип в .glb, startAnimations
+   *  включает все клипы объекта — здесь он один). */
+  async spawnZombie(position: Vec3): Promise<void> {
+    if (this.zombieInstance || !this.zoneRoot) return;
+    const catalogEntry = OBJECTS_CATALOG.zombie_walker_a;
+    if (!catalogEntry) {
+      console.warn('[SceneManager] "zombie_walker_a" отсутствует в OBJECTS_CATALOG');
+      return;
+    }
+
+    let gltf;
+    try {
+      gltf = await this.assetLoader.loadModel(catalogEntry.modelPath);
+    } catch (error) {
+      console.warn('[SceneManager] не удалось загрузить модель зомби "zombie_walker_a"', error);
+      return;
+    }
+    // Пока модель грузилась, зона могла выгрузиться или зомби уже успели заспавнить
+    // повторным вызовом — тогда этот результат уже не актуален.
+    if (this.zombieInstance || !this.zoneRoot) return;
+
+    const instance = gltf.scene.clone(true);
+    enableShadows(instance);
+    instance.position.set(position.x, position.y, position.z);
+    this.zoneRoot.add(instance);
+    this.zombieInstance = instance;
+    this.startAnimations(instance, gltf.animations);
+  }
+
+  /** Убирает зомби со сцены (игрок проиграл смену — начинаем заново с 1-й смены,
+   *  где зомби ещё не должно быть; см. Game.onShiftEnd). */
+  removeZombie(): void {
+    if (!this.zombieInstance) return;
+    this.stopAnimations(this.zombieInstance);
+    this.zombieInstance.removeFromParent();
+    disposeObject(this.zombieInstance);
+    this.zombieInstance = null;
+  }
+
+  isZombieActive(): boolean {
+    return this.zombieInstance !== null;
+  }
+
+  /** Текущая позиция зомби — ZombieSystem двигает её сам (AI), SceneManager только
+   *  хранит актёра и его коллизии/анимацию. */
+  getZombiePosition(): Vec3 | null {
+    if (!this.zombieInstance) return null;
+    const { x, y, z } = this.zombieInstance.position;
+    return { x, y, z };
+  }
+
+  /** position — новая позиция (XZ двигает ZombieSystem, Y не меняется — зомби ходит
+   *  по плоской земле зоны, как и игрок); yawRadians — поворот лицом к направлению
+   *  движения (модель смотрит на +Z glTF в нейтральной позе, см. каталог). */
+  setZombiePose(position: Vec3, yawRadians: number): void {
+    if (!this.zombieInstance) return;
+    this.zombieInstance.position.set(position.x, position.y, position.z);
+    this.zombieInstance.rotation.y = yawRadians;
+  }
+
+  /** Ускоряет/замедляет проигрывание клипа ходьбы вместе со скоростью зомби (иначе
+   *  ноги перебирают с одной и той же частотой независимо от того, как быстро он
+   *  на самом деле едет по земле — на высоких сменах выглядело бы как скольжение). */
+  setZombieAnimationSpeed(timeScale: number): void {
+    if (!this.zombieInstance) return;
+    const mixer = this.animationMixers.get(this.zombieInstance);
+    if (mixer) mixer.timeScale = timeScale;
   }
 }
