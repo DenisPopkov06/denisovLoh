@@ -146,6 +146,11 @@ export const OBJECTS_CATALOG: Record<string, ObjectCatalogEntry> = {
   // Бабочка (размах 0.16 м), голова на +Z; в .glb анимация взмаха крыльев «flap» (0.25 с, по кругу).
   butterfly_blue_a: decor("butterfly_blue_a"),
 
+  // Зомби (враждебный моб по арт-листу): сутулый, ≈ 1.65 м, origin на земле между ступнями, лицом к +Z.
+  // 16 частей-узлов с шарнирами (assets_src/blender/zombie_lib.py), кожа и ткань — PBR-текстуры, глаза светятся.
+  // Анимаций в .glb пока нет (будут отдельной задачей). Поведение (ИИ, урон) — на стороне кода.
+  zombie_walker_a: decor("zombie_walker_a"),
+
   // Горшок — переносимый предмет (MISSING найти/принести, DISPLACED сдвинут).
   pot_clay_a: pickup("pot_clay_a", [ObjectState.MISSING, ObjectState.DISPLACED]),
 
