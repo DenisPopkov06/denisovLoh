@@ -45,16 +45,16 @@ JOINTS = {"pelvis": (NAME, (0, 0, 0)), "chest": ("pelvis", (0, 0, 0.10)), "head"
           "foot_l": ("shin_l", (0, 0, -B.SHIN_LEN)), "foot_r": ("shin_r", (0, 0, -B.SHIN_LEN))}
 
 # поза (градусы; вперёд для «вверх-торчащих» частей — +X, для свисающих — −X; ноги — через IK)
-POSE = dict(pelvis_pos=(0.0, -0.02, 0.945), pelvis=(8, 0, 3), chest=(30, 0, -5), head=(-22, 4, 8), jaw=(0, 0, 0),
+POSE = dict(pelvis_pos=(0.0, -0.03, 0.950), pelvis=(8, 0, 3), chest=(30, 0, -5), head=(-22, 4, 8), jaw=(0, 0, 0),
             upper_l=(-26, -22, 0), upper_r=(-30, 20, 0), fore_l=(-50, 0, 0), fore_r=(-44, 0, 0), hand_l=(-14, 0, 0), hand_r=(-20, 0, 0),
-            foot_l=(0.290, -0.15, 18), foot_r=(-0.265, 0.15, -20))
+            foot_l=(0.285, -0.12, 18), foot_r=(-0.260, 0.07, -20))
 
 
 def part(key):
     return bpy.data.objects[f"{NAME}_{key}"]
 
 
-def build_zombie(M=None, pose=True, seed=66, ao=True):
+def build_zombie(M=None, pose=True, seed=66, ao=True, fix=True):
     """Создаёт (заново) пустышку-корень и 16 частей с шарнирами; возвращает число треугольников."""
     for m in (ZT,):
         importlib.reload(m)
@@ -86,6 +86,8 @@ def build_zombie(M=None, pose=True, seed=66, ao=True):
     bpy.context.view_layer.update()
     if pose:
         apply_pose()
+        if fix:
+            audit_floating(snap=True)                                # подтянуть/вдавить всё, что не врастает в остальное тело
         if ao:
             bake_ao()
     return {"tris": tris, "parts": len(MAKERS)}
@@ -142,6 +144,115 @@ def apply_pose(P=None):
     low = min((o.matrix_world @ v.co).z for k in ("foot_l", "foot_r") for o in (part(k),) for v in o.data.vertices)
     top = max((o.matrix_world @ v.co).z for k in MAKERS for o in (part(k),) for v in o.data.vertices)
     return {"lowest_sole": round(low - root.z, 3), "top": round(top - root.z, 3)}
+
+
+# ============================================================================ целостность: поиск и подтягивание «летающих» кусков
+def _islands(objs):
+    """Острова геометрии (связные по общим вершинам) во всех частях, в мировых координатах.
+    Возвращает (world_verts, tris, isl) — tris: [(i, j, k, id острова)], isl: [{part, tris, verts}]."""
+    wverts, tris, isl = [], [], []
+    for o in objs:
+        me, M = o.data, o.matrix_world
+        base = len(wverts)
+        wverts += [M @ v.co for v in me.vertices]
+        parent = list(range(len(me.vertices)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for poly in me.polygons:
+            vs = list(poly.vertices)
+            for v in vs[1:]:
+                a, b = find(vs[0]), find(v)
+                if a != b:
+                    parent[a] = b
+        ids = {}
+        for poly in me.polygons:
+            r = find(poly.vertices[0])
+            if r not in ids:
+                ids[r] = len(isl)
+                isl.append({"part": o.name.replace(NAME + "_", ""), "obj": o, "tris": [], "verts": set()})
+            k = ids[r]
+            vs = [base + v for v in poly.vertices]
+            for i in range(1, len(vs) - 1):
+                tris.append((vs[0], vs[i], vs[i + 1], k))
+            isl[k]["verts"].update(vs)
+    return wverts, tris, isl
+
+
+def _inside(tree, p):
+    """Точка внутри замкнутого тела (чётное/нечётное число пересечений луча по +Z) относительно BVH tree."""
+    n, o, d = 0, Vector(p), Vector((0.0, 0.0, 1.0))
+    for _ in range(12):
+        hit = tree.ray_cast(o, d)
+        if hit[0] is None:
+            break
+        n += 1
+        o = hit[0] + d * 1e-5
+    return n % 2 == 1
+
+
+def audit_floating(touch=0.0015, max_snap=0.08, snap=False, embed=0.0012, tangent_push=0.0030):
+    """Находит куски (острова) геометрии, плохо связанные с остальной моделью в позе:
+      float   — расстояние до остального тела > touch и не внутри другого тела («летает»);
+      tangent — касается, но ни одна вершина не заходит внутрь другого тела (держится «на линии», выглядит отдельным).
+    snap=True: float сдвигается к ближайшей поверхности (если ближе max_snap) с заглублением embed, tangent вдавливается на tangent_push.
+    Возвращает список найденных: {part, tris, kind, dist, center, fixed}."""
+    from mathutils.bvhtree import BVHTree
+    bpy.context.view_layer.update()
+    objs = [part(k) for k in MAKERS]
+    offs, acc = {}, 0
+    for o in objs:
+        offs[o.name] = acc
+        acc += len(o.data.vertices)
+    wverts, tris, isl = _islands(objs)
+    out = []
+    for k, it in enumerate(isl):
+        rest = [(a, b, c) for a, b, c, i in tris if i != k]
+        if not rest:
+            continue
+        tree = BVHTree.FromPolygons(wverts, rest, epsilon=1e-7)
+        vlist = list(it["verts"])
+        best = (1e9, None, None)
+        n_contact = 0
+        for vi in vlist:
+            loc = tree.find_nearest(wverts[vi])
+            if loc[0] is not None:
+                if loc[3] <= touch:
+                    n_contact += 1
+                if loc[3] < best[0]:
+                    best = (loc[3], vi, loc[0])
+        dist = best[0]
+        step = max(1, len(vlist) // 16)
+        n_in = sum(1 for vi in vlist[::step] if _inside(tree, wverts[vi]))
+        if dist > touch and n_in:                                    # целиком/частично внутри другого тела — не «летает»
+            continue
+        if dist <= touch and (n_in or n_contact >= 2):
+            continue                                                 # врос в тело или держится ребром (бахрома, заплаты по краю)
+        kind = "float" if dist > touch else "tangent"
+        c = sum((wverts[v] for v in vlist), Vector()) / len(vlist)
+        rec = {"part": it["part"], "tris": sum(1 for t in tris if t[3] == k), "kind": kind, "dist": round(dist, 4),
+               "center": tuple(round(x, 3) for x in (c - Vector(DISPLAY_POS))), "fixed": False}
+        if snap and dist < max_snap:
+            if kind == "float":
+                T = best[2] - wverts[best[1]]
+                T = T + T.normalized() * embed
+            else:
+                T = (best[2] - c)
+                T = T.normalized() * tangent_push if T.length > 1e-9 else Vector((0, 0, 0))
+            o = it["obj"]
+            loc_T = o.matrix_world.to_3x3().inverted() @ T
+            for vi in vlist:
+                o.data.vertices[vi - offs[o.name]].co += loc_T
+            o.data.update()
+            rec["fixed"] = True
+            bpy.context.view_layer.update()
+            wverts, tris, _ = _islands(objs)
+        out.append(rec)
+    return out
 
 
 # ============================================================================ запекание окклюзии (AO) в цвет граней

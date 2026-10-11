@@ -180,7 +180,7 @@ def part_head(rnd):
         G.dent(verts, (sx * 0.047, -0.108, 0.077), 0.032, -0.028, (0, 1, 0))                     # тяжёлая бровь
         G.dent(verts, (sx * 0.084, -0.083, 0.014), 0.026, -0.026, (sx * 0.6, 1, 0))              # скула
         G.dent(verts, (sx * 0.103, -0.047, 0.030), 0.022, -0.012, (sx, 0.4, 0))                  # скуловая дуга к уху
-        G.dent(verts, (sx * 0.062, -0.075, -0.014), 0.026, 0.036, (-sx * 0.7, 0.8, 0))           # впалая щека
+        G.dent(verts, (sx * 0.070, -0.075, -0.010), 0.026, 0.034, (-sx * 0.7, 0.8, 0))           # впалая щека
         G.dent(verts, (sx * 0.108, -0.044, 0.080), 0.032, 0.020, (-sx, 0, 0))                    # висок
     G.dent(verts, (0, -0.110, 0.075), 0.022, -0.010, (0, 1, 0))                                  # межбровье
     G.dent(verts, (0, -0.108, 0.034), 0.018, 0.012, (0, 1, 0))                                   # переносица
@@ -230,8 +230,6 @@ def part_head(rnd):
     for ex, ez in EYES:
         ridge([(ex + (SOCKET_R + 0.0030) * math.cos(t), ez + (SOCKET_R + 0.0030) * math.sin(t)) for t in [k * math.tau / 14 for k in range(14)]],
               0.0046, closed=True)
-    for sx in (-1, 1):
-        ridge([(sx * 0.064, 0.020), (sx * 0.082, 0.018), (sx * 0.098, 0.028), (sx * 0.110, 0.036)], 0.0065)
 
     # ---- трещины на коже: тонкие тёмные канавки, спроецированные на поверхность
     def crack(pts, r=0.0017):
@@ -260,8 +258,9 @@ def part_head(rnd):
 
     # ---- верхняя челюсть: массивный костный блок под носом, десна, ровные зубы, тёмная полость рта
     arc_pts = [(0.036 * math.sin(t), -0.038 - 0.046 * math.cos(t)) for t in [(-1.10 + 2.20 * i / 14) for i in range(15)]]
-    G.tube(bm, rnd, [V((x, y, -0.014)) for x, y in arc_pts], [(0.0070, 0.0105)] * 15, 6, SKIN, lambda p: tuple(c * 1.06 for c in skin_f(p, 9)),
-           up=(0, 0, 1), caps=(True, True), jit=0.04)
+    bone_c = lambda p: tuple(c * 1.06 for c in skin_f(p, 9))
+    G.tube(bm, rnd, [V((x, y, -0.011)) for x, y in arc_pts], [(0.0125, 0.0120)] * 15, 6, SKIN, bone_c, up=(0, 0, 1), caps=(True, True), jit=0.03)   # блок
+    G.tube(bm, rnd, [V((x * 0.98, y + 0.004, 0.004)) for x, y in arc_pts], [(0.0110, 0.0150)] * 15, 6, SKIN, bone_c, up=(0, 0, 1), caps=(True, True), jit=0.03)  # мост к носу
     G.tube(bm, rnd, [V((x, y - 0.002, -0.0235)) for x, y in arc_pts], [(0.0038, 0.0052)] * 15, 5, MISC, GUM, caps=(True, True))
     teeth_arc(bm, rnd, (0, -0.038, -0.0215), 0.036, 0.046, 9, -1.10, 1.10, 0.0165, True)
     G.blob(bm, rnd, (0, -0.030, -0.048), (0.038, 0.034, 0.024), DARK, MISC, sub=1, jitter=0.04)

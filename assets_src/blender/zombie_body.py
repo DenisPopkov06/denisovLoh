@@ -41,6 +41,21 @@ def spike(bm, rnd, a, b, r0, r1, color, seg=4, mi=MISC):
     return G.spike(bm, rnd, a, b, r0, r1, color, seg, mi)
 
 
+def surface_patch(bm, rnd, surf, cx, cz, w, h, tilt, color, off, mi=CLOTH, n=5):
+    """Заплата-сетка n×n, повторяющая изгиб поверхности: surf(x, z) → y поверхности; off — отступ по Y (знак — наружу)."""
+    ct, st = math.cos(tilt), math.sin(tilt)
+    rows = []
+    for j in range(n):
+        v = -h / 2 + h * j / (n - 1)
+        row = []
+        for i in range(n):
+            u = -w / 2 + w * i / (n - 1)
+            x, z = cx + u * ct - v * st, cz + u * st + v * ct
+            row.append(V((x, surf(x, z) + off, z)))
+        rows.append(row)
+    return G.bridge(bm, rows, mi, color, rnd, caps=(False, False), closed=False, jit=0.05)
+
+
 # ============================================================================ туловище (шарнир — поясница; вверх по +Z)
 CHEST = [(-0.04, 0.074, 0.100, 0.000), (0.04, 0.074, 0.104, 0.000), (0.13, 0.082, 0.114, 0.000), (0.22, 0.092, 0.130, 0.000),
          (0.31, 0.098, 0.146, 0.000), (0.37, 0.094, 0.150, 0.000), (0.41, 0.082, 0.132, 0.004), (0.44, 0.060, 0.082, 0.008),
@@ -144,9 +159,16 @@ def part_chest(rnd):
     fringe(bm, rnd, hem_all[n - 5:], (0, 0.04, -1), 0.03, 0.10, lambda p: cloth_c(p, 10, TINT_GREY, 0.85), per=1, center=V((0, 0, -0.04)))
     fringe(bm, rnd, hem_all[4:n - 4], (0, 0.18, -1), 0.07, 0.22, lambda p: cloth_c(p, 10, TINT_RED, 0.85), per=2, center=V((0, 0, -0.04)),
            flare=0.02, wob=0.5)                                                                                     # длинные лохмотья на спине
-    # V-образный клин (кокетка) на спине
-    tri = [bm.verts.new(V(p)) for p in ((-0.115, 0.140, 0.405), (0.115, 0.140, 0.405), (0.005, 0.158, 0.205))]
-    G.paint(bm, [bm.faces.new(tri)], lambda p: cloth_c(p, 12, (1.0, 0.76, 0.70), 1.15), rnd, CLOTH, 0.06)
+    # V-образный клин (кокетка) на спине: сетка, прижатая к поверхности жилета
+    def vest_back_y(x, z):
+        _, a, b = interp(VEST, z)
+        return a * max(0.0, 1.0 - (abs(x) / b) ** 2.4) ** (1.0 / 2.4)
+
+    yoke = []
+    for zz in (0.405, 0.345, 0.285, 0.225):
+        w = 0.115 * (zz - 0.205) / 0.200 + 0.012
+        yoke.append([V((-w + 2 * w * k / 4, vest_back_y(-w + 2 * w * k / 4, zz) + 0.004, zz)) for k in range(5)])
+    G.bridge(bm, yoke, CLOTH, lambda p: cloth_c(p, 12, (1.0, 0.76, 0.70), 1.15), rnd, caps=(False, False), closed=False, jit=0.06)
     # воротник-стойка: высокий сзади, рваный верх
     top_rings = []
     for first in (True, False):
@@ -184,11 +206,8 @@ def part_chest(rnd):
     fringe(bm, rnd, [v.co.copy() for v in rv3[-1]], (0, 0.0, -1), 0.04, 0.11, lambda p: cloth_c(p, 62, (0.60, 0.62, 0.74), 0.72), per=2,
            center=V((0, 0.012, 0.40)), flare=0.012, wob=0.6)
     for (px, pz, pw, ph, tilt) in ((-0.07, 0.17, 0.075, 0.085, 0.10), (0.06, 0.27, 0.060, 0.070, -0.12)):             # заплатки на спине
-        yb2 = chest_ab(pz, 0.0)[0] + 0.050
-        G.box(bm, rnd, (px, yb2, pz), (pw * 1.14, 0.004, ph * 1.14), lambda p: cloth_c(p, 22, TINT_RED, 0.55), rot=(0, tilt, 0), mi=CLOTH)
-        G.box(bm, rnd, (px, yb2 + 0.0025, pz), (pw, 0.004, ph), lambda p: cloth_c(p, 21, (1.0, 0.82, 0.74), 1.25), rot=(0, tilt, 0), mi=CLOTH)
-    for z0 in (0.12, 0.25):                                                                                         # пуговицы
-        G.blob(bm, rnd, (0.058, front_y(z0, 0.058, 0.040) - 0.002, z0), (0.0085, 0.004, 0.0085), METAL, MISC, sub=1, jitter=0.0)
+        surface_patch(bm, rnd, vest_back_y, px, pz, pw * 1.14, ph * 1.14, tilt, lambda p: cloth_c(p, 22, TINT_RED, 0.55), 0.0030)       # обшивка
+        surface_patch(bm, rnd, vest_back_y, px, pz, pw, ph, tilt, lambda p: cloth_c(p, 21, (1.0, 0.82, 0.74), 1.25), 0.0055)              # заплата
     G.facet(bm, rnd, [f for f in bm.faces if f.material_index == SKIN])
     bmesh.ops.scale(bm, vec=(1.0, 1.0, TORSO_Z), verts=bm.verts)
     G.uv_pass(bm)
@@ -267,10 +286,12 @@ def part_forearm(rnd, side):
            caps=(True, True))
     for sx in (-1, 1):                                                                                                    # косточки запястья
         G.blob(bm, rnd, (sx * 0.021, 0.010, -0.244), (0.0115, 0.0115, 0.0115), LIGHT, SKIN, jitter=0.10)
-    rings = [G.ring(V((0, 0, z)), V((0, -1, 0)), V((1, 0, 0)), a, b, 9, rnd=rnd) for z, a, b in
-             ((-0.186, 0.030, 0.036), (-0.192, 0.034, 0.040), (-0.232, 0.034, 0.040), (-0.238, 0.030, 0.036))]            # широкий кожаный браслет
+    rings = []                                                                                                           # широкий кожаный браслет — плотно по предплечью
+    for z, dr in ((-0.186, 0.002), (-0.192, 0.007), (-0.232, 0.007), (-0.238, 0.002)):
+        fa, fb = interp(FORE, z)[1:3]
+        rings.append(G.ring(V((0, 0, z)), V((0, -1, 0)), V((1, 0, 0)), fa + dr, fb + dr, 9, rnd=rnd))
     G.bridge(bm, rings, CLOTH, lambda p: cloth_c(p, 25, (0.70, 0.46, 0.40), 0.7), rnd, caps=(False, False), closed=True)
-    G.box(bm, rnd, (0.0, -0.037, -0.212), (0.026, 0.008, 0.034), METAL)
+    G.box(bm, rnd, (0.0, -(interp(FORE, -0.212)[1] + 0.008), -0.212), (0.026, 0.008, 0.034), METAL)
     G.facet(bm, rnd, [f for f in bm.faces if f.material_index == SKIN])
     G.uv_pass(bm)
     return bm
@@ -299,7 +320,7 @@ def part_hand(rnd, side):
             G.blob(bm, rnd, q, (0.0080, 0.0080, 0.0080), skin, SKIN, sub=1, jitter=0.06)
         d = (pts[-1] - pts[-2]).normalized()
         G.spike(bm, rnd, pts[-1] - d * 0.002, pts[-1] + d * 0.014, 0.0052, 0.0014, BONE_DK, seg=4)                       # коготь
-    tp = [V((-0.012, -0.040, -0.026)), V((-0.026, -0.054, -0.060)), V((-0.034, -0.052, -0.092))]
+    tp = [V((-0.008, -0.030, -0.024)), V((-0.024, -0.050, -0.060)), V((-0.034, -0.052, -0.092))]
     G.tube(bm, rnd, tp, [0.0120, 0.0095, 0.0072], 5, SKIN, skin, caps=(True, True), up=(1, 0, 0))
     G.spike(bm, rnd, tp[-1] - V((0, 0, 0.002)), tp[-1] + V((-0.004, 0.0, -0.014)), 0.0054, 0.0014, BONE_DK, seg=4)
     bmesh.ops.scale(bm, vec=(1.45, 1.45, 1.45), verts=bm.verts)
@@ -332,7 +353,12 @@ def part_thigh(rnd, side):
     hem = [v.co.copy() for v in rv[-1]]
     hem.append(hem[0].copy())
     fringe(bm, rnd, hem, (0, 0, -1), 0.04, 0.13, lambda p: cloth_c(p, 36, TINT_RED, 0.85), per=1, center=V((0, 0, -0.255)), flare=0.014, wob=0.6)
-    G.box(bm, rnd, (0.02 * side, -0.114, -0.12), (0.080, 0.004, 0.090), lambda p: cloth_c(p, 38 + side, (1.0, 0.84, 0.76), 1.3), rot=(0.06, 0, 0.10), mi=CLOTH)   # заплата
+    def thigh_front_y(x, z):                                                                                              # передняя поверхность шорт на бедре
+        _, a_, b_ = interp(sh, z)
+        return -a_ * max(0.0, 1.0 - (x / b_) ** 2) ** 0.5
+
+    surface_patch(bm, rnd, thigh_front_y, 0.02 * side, -0.12, 0.092, 0.100, 0.10, lambda p: cloth_c(p, 40 + side, TINT_RED, 0.5), -0.0030)           # обшивка
+    surface_patch(bm, rnd, thigh_front_y, 0.02 * side, -0.12, 0.080, 0.088, 0.10, lambda p: cloth_c(p, 38 + side, (1.0, 0.84, 0.76), 1.3), -0.0055)   # заплата
     G.facet(bm, rnd, [f for f in bm.faces if f.material_index == SKIN])
     G.uv_pass(bm)
     return bm
@@ -371,18 +397,19 @@ def part_shin(rnd, side):
 FOOT = [(0.092, 0.046, 0.020), (0.058, 0.058, 0.040), (0.0, 0.064, 0.052), (-0.060, 0.066, 0.020), (-0.120, 0.070, -0.004),
         (-0.172, 0.066, -0.020), (-0.208, 0.052, -0.030)]       # y, полуширина, верх (z)
 SOLE = 0.028                                                     # толщина подошвы; низ ботинка на z = −ANKLE_H
+WELD = 0.010                                                     # на сколько верх ботинка и подошва заходят друг в друга
 
 
 def part_foot(rnd, side):
     """Массивный ботинок ниже голенища: толстая подошва, каблук, круглый носок, шнуровка; шарнир — лодыжка, подошва на z = −ANKLE_H."""
     bm = bmesh.new()
     boot = lambda p: cloth_c(p, 52 + side, (0.62, 0.50, 0.44), 0.85)
-    zb = -ANKLE_H + SOLE
+    zb = -ANKLE_H + SOLE - WELD
     pts = [V((0, y, (top + zb) / 2)) for y, w, top in FOOT]
     rad = [((top - zb) / 2, w) for y, w, top in FOOT]
     G.tube(bm, rnd, pts, rad, 10, CLOTH, boot, up=(0, 0, 1), caps=(True, True), n=3.0, jit=0.02)
-    G.tube(bm, rnd, [V((0, y, -ANKLE_H + SOLE / 2)) for y, w, top in FOOT], [(SOLE / 2, w + 0.006) for y, w, top in FOOT], 8, MISC,
-           LEATHER, up=(0, 0, 1), caps=(True, True), n=3.0)
+    G.tube(bm, rnd, [V((0, y, -ANKLE_H + (SOLE + WELD) / 2)) for y, w, top in FOOT], [((SOLE + WELD) / 2, w + 0.004) for y, w, top in FOOT], 8, MISC,
+           LEATHER, up=(0, 0, 1), caps=(True, True), n=8.0)
     G.box(bm, rnd, (0, 0.064, -ANKLE_H + 0.012), (0.100, 0.052, 0.030), LEATHER)                                         # каблук
     rings = [G.ring(V((0, 0, z)), V((0, -1, 0)), V((1, 0, 0)), 0.075, 0.077, 11, rnd=rnd, jit=0.02) for z in (0.062, -0.018)]
     G.bridge(bm, rings, CLOTH, boot, rnd, caps=(False, False), closed=True, jit=0.06)                                    # манжета-стык с голенищем
