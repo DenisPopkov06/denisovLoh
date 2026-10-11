@@ -6,10 +6,11 @@ import { ObjectStateMachine } from "@/systems/ObjectStateMachine";
 import {
   ambientIntensityForShift,
   createAmbientFill,
-  createBoundaryFogWall,
   createMoonLight,
   createSceneFog,
+  localLightFactorForShift,
   moonIntensityForShift,
+  skyBackgroundIntensityForShift,
 } from "@/render/Lighting";
 import { createPlaceholderGround } from "@/render/MaterialsLib";
 
@@ -23,6 +24,20 @@ export interface CollisionCircle {
   /** Невысокое препятствие — прыжком (см. PlayerController) можно перепрыгнуть через
    *  него; для обычной ходьбы по-прежнему блокирует. */
   vaultable: boolean;
+  /** Только для vaultable: true — простым прыжком с места не перепрыгнуть, только
+   *  прыжком с разбега (спринт зажат в момент толчка): скамья, крупные валуны —
+   *  слишком широкие, обычного прыжка не хватает перелететь целиком. */
+  vaultRequiresSprint?: boolean;
+}
+
+/** Прямоугольник-коллайдер (всегда сплошная стена, не vaultable) — для длинных прямых
+ *  препятствий вроде ограды, которым не подходит ни круг (сильно вытянутый прямоугольник
+ *  вместо круга накрыл бы весь двор), ни луч (см. FENCE_MESH_NAME_PATTERN ниже). */
+export interface CollisionRect {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
 }
 
 /** objectId -> состояние -> objectId модели-варианта, которую показать вместо базовой
@@ -81,26 +96,58 @@ const LANTERN_HANG_OFFSET_Y = -0.68;
 // обе высоты), а bounding box дерева считается по всей кроне — круг получился бы
 // в разы шире реального ствола и сделал бы непроходимой зону, где физически пройти
 // можно (под кроной, в стороне от ствола).
-// vaultable: true только для бочек/ящиков — невысокие, прыжком через них разумно
-// перескочить (как и у надгробий-инстансов, см. objects.catalog.ts). Фонарный столб,
-// скамья и постамент выше/сложнее по силуэту — остаются сплошной стеной и при прыжке.
-const STATIC_CIRCLE_NAME_PATTERNS: { pattern: RegExp; vaultable: boolean }[] = [
+// vaultable: true — можно перепрыгнуть; vaultRequiresSprint — только прыжком с
+// разбега (бочки/ящики — обычным прыжком с места тоже, они невысокие и неширокие;
+// скамья — широкая и длинная, обычного прыжка не хватает её перелететь целиком).
+// Фонарный столб и постамент остаются сплошной стеной в любом случае.
+const STATIC_CIRCLE_NAME_PATTERNS: { pattern: RegExp; vaultable: boolean; vaultRequiresSprint?: boolean }[] = [
   { pattern: /^lamp_post_/, vaultable: false },
   { pattern: /^barrels?_/, vaultable: true },
   { pattern: /^crates?_/, vaultable: true },
-  { pattern: /^bench_wood/, vaultable: false },
+  { pattern: /^bench_wood/, vaultable: true, vaultRequiresSprint: true },
   { pattern: /^pedestal_/, vaultable: false },
 ];
+// Ограда (fence_wood_0N, assets_src/blender/zone_lib.py build_fence) — цельный прямой
+// забор по всей стороне зоны, круг под него не подходит (накрыл бы собой весь двор).
+// Раньше ловилась лучом по staticGeometry наравне с остальной геометрией зоны, но лучи
+// идут только на двух строго
+// фиксированных высотах (глаза ~1.6м и низкий ~0.5м — см. PlayerController), а у забора
+// верхняя жердь на z≈1.05-1.2м — ниже уровня глаз, и сама по себе тонкая; нижняя жердь
+// (z≈0.55м) с вероятностью 5% вообще "выпала" (визуальная деталь художника). На стыке
+// этих условий луч на любой высоте иногда проходил мимо всей ограды — через один пролёт
+// можно было пройти, через соседний (где жердь на месте) нет. Прямоугольник по
+// bounding box сегмента не зависит ни от высоты лучей, ни от случайного "выпала": всегда
+// сплошная стена по всей длине.
+const FENCE_MESH_NAME_PATTERN = /^fence_wood_/;
 const ROCK_MESH_NAME_PATTERN = /^rocks_/;
 const ROCK_MIN_COLLISION_RADIUS = 0.4;
+// Валуны радиусом до этого значения — некрупные, обычным прыжком (без спринта)
+// перепрыгиваются; крупнее — только с разбега (vaultRequiresSprint). Было 0.55 —
+// самый маленький реально встречающийся остров геометрии уже ~0.57м (см.
+// assets_src/blender/zone_lib.py build_rocks, крупный камень кластера r 0.55-0.95
+// до масштабирования), так что без спринта не перепрыгивался вообще ни один камень.
+const ROCK_SPRINT_REQUIRED_ABOVE_RADIUS = 0.7;
 
-function computeBoundingCircle(mesh: THREE.Mesh, vaultable: boolean): CollisionCircle {
+function computeBoundingCircle(mesh: THREE.Mesh, vaultable: boolean, vaultRequiresSprint?: boolean): CollisionCircle {
   mesh.geometry.computeBoundingBox();
   const box = mesh.geometry.boundingBox?.clone() ?? new THREE.Box3();
   box.applyMatrix4(mesh.matrixWorld);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
-  return { x: center.x, z: center.z, radius: Math.max(size.x, size.z) / 2, vaultable };
+  return {
+    x: center.x,
+    z: center.z,
+    radius: Math.max(size.x, size.z) / 2,
+    vaultable,
+    ...(vaultRequiresSprint !== undefined && { vaultRequiresSprint }),
+  };
+}
+
+function computeBoundingRect(mesh: THREE.Mesh): CollisionRect {
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox?.clone() ?? new THREE.Box3();
+  box.applyMatrix4(mesh.matrixWorld);
+  return { minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z };
 }
 
 /** Разбивает один слитый меш на несвязные "острова" геометрии (например, отдельные
@@ -108,7 +155,12 @@ function computeBoundingCircle(mesh: THREE.Mesh, vaultable: boolean): CollisionC
  *  делят вершины) и считает bounding-круг для каждого острова отдельно, в мировых
  *  координатах. Группировка — по квантованной позиции вершины (а не по индексу),
  *  чтобы одинаково работать и с indexed-, и с non-indexed-геометрией из экспортера. */
-function computeIslandCircles(mesh: THREE.Mesh, minRadius: number, vaultable: boolean): CollisionCircle[] {
+function computeIslandCircles(
+  mesh: THREE.Mesh,
+  minRadius: number,
+  vaultable: boolean,
+  sprintRequiredAboveRadius?: number,
+): CollisionCircle[] {
   const position = mesh.geometry.attributes.position;
   const index = mesh.geometry.index;
   const triangleCount = (index ? index.count : position.count) / 3;
@@ -162,7 +214,16 @@ function computeIslandCircles(mesh: THREE.Mesh, minRadius: number, vaultable: bo
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(size.x, size.z) / 2;
-    if (radius >= minRadius) circles.push({ x: center.x, z: center.z, radius, vaultable });
+    if (radius >= minRadius) {
+      const vaultRequiresSprint = sprintRequiredAboveRadius !== undefined && radius > sprintRequiredAboveRadius;
+      circles.push({
+        x: center.x,
+        z: center.z,
+        radius,
+        vaultable,
+        ...(vaultRequiresSprint && { vaultRequiresSprint }),
+      });
+    }
   }
   return circles;
 }
@@ -176,12 +237,26 @@ function isGravestoneLikeObjectId(objectId: string): boolean {
   return !!entry && entry.repairableStates.length > 0 && entry.collisionRadius !== undefined;
 }
 
-/** Переносимый мелкий предмет заданий (горшок, венок, цветы) — тоже кандидат на
- *  рандомизацию "где он стоит", но отдельной группой от надгробий (другой габарит). */
-function isPickupObjectId(objectId: string): boolean {
-  const entry = OBJECTS_CATALOG[objectId];
-  return !!entry && entry.interactable && entry.repairableStates.length > 0 && entry.collisionRadius === undefined;
+type ItemKind = "pot" | "flowers" | "wreath";
+
+function itemKindOf(objectId: string): ItemKind | null {
+  if (objectId === "pot_clay_a") return "pot";
+  if (objectId.startsWith("flowers_")) return "flowers";
+  if (objectId.startsWith("wreath_")) return "wreath";
+  return null;
 }
+
+// Фиксированный слот каждого вида предмета относительно его надгробия — локальные
+// (x, z) в осях камня (x: вправо от грани, z: вперёд по повороту камня), одинаковый
+// на любом камне. Венок — вплотную к лицевой грани (как и был задуман изначально,
+// см. objects.catalog.ts: "лицом к +Z, стоят на хвостах ленты — прислонить к
+// надгробию"); горшок и цветы — по бокам перед камнем, подальше друг от друга и от
+// венка, чтобы три предмета на одном надгробии не перекрывали друг друга.
+const ITEM_SLOTS: Record<ItemKind, { x: number; z: number }> = {
+  wreath: { x: 0, z: 0.14 },
+  pot: { x: 0.45, z: 0.25 },
+  flowers: { x: -0.45, z: 0.25 },
+};
 
 function shuffleInPlace<T>(items: T[]): void {
   for (let i = items.length - 1; i > 0; i--) {
@@ -235,17 +310,45 @@ export class SceneManager {
   private readonly desiredModelByInstance = new Map<string, string>();
   private readonly animationMixers = new Map<THREE.Object3D, THREE.AnimationMixer>();
   private readonly staticCollisionCircles: CollisionCircle[] = [];
+  private readonly staticCollisionRects: CollisionRect[] = [];
+  /** Меши из staticGeometry, у которых уже есть свой круг-коллайдер (бочки/ящики/
+   *  скамья/валуны) — исключаются из лучевой проверки (getStaticCollisionMeshes
+   *  всегда включает staticGeometry целиком), иначе луч по этому же мешу ловит их
+   *  независимо от прыжка и сводит на нет vaultable/vaultRequiresSprint: круг
+   *  разрешает перепрыгнуть, а луч по той же геометрии тут же блокирует снова. */
+  private readonly circleCoveredMeshes = new Set<THREE.Object3D>();
+  /** Горшок/цветы/венок → надгробие, у которого он стоит (ближайшее на момент загрузки
+   *  зоны, из АВТОРСКОЙ раскладки до любых перемешиваний). Надгробия перемешиваются
+   *  между собой каждую смену (reshufflePlacedObjects); эти мелкие предметы раньше
+   *  либо оставались на СТАРОМ слоте (венки) — после перемешивания там мог оказаться
+   *  совсем другой камень (уже/шире исходного), венок либо проваливался внутрь, либо
+   *  зависал с зазором, — либо перемешивались отдельной группой МЕЖДУ СОБОЙ (горшки,
+   *  цветы), из-за чего у каждого камня предметы вставали как попало (сбоку, спереди,
+   *  сзади — какой угодно оригинальный оффсет достался камню по жребию). Теперь у
+   *  каждого вида предмета ОДИН фиксированный слот относительно камня (ITEM_SLOTS) —
+   *  одинаковый на любом надгrobии, целом или нет, и любом его положении после
+   *  перемешивания (repositionPairedItems). DISPLACED по-прежнему сдвигает предмет в
+   *  сторону от этого слота (applyFallbackTransform) — так разница "на месте/сдвинуто"
+   *  остаётся понятной. */
+  private readonly itemAnchors = new Map<string, { gravestoneInstanceId: string; kind: ItemKind }>();
   /** Ссылки нужны, чтобы менять яркость по ходу смен (applyShiftDarkness) —
    *  createAmbientFill()/createMoonLight() добавляются в сцену один раз насовсем,
    *  зона потом грузится/выгружается поверх, без пересоздания света. */
   private readonly ambientLight = createAmbientFill();
   private readonly moonLight = createMoonLight();
+  /** Точечные/направленные светильники зоны — запечённые в zone_*.glb (фонарь на
+   *  столбе, окна/лампа дома) плюс те, что код добавляет сам на размещённые объекты
+   *  (createLanternLight() на lantern_iron_a) — в отличие от ambientLight/moonLight,
+   *  это не глобальный свет, а локальные источники, но они точно так же должны
+   *  гаснуть по ходу смен (applyShiftDarkness), иначе двор у дома/фонаря остаётся
+   *  ярко освещённым независимо от общего затемнения (см. localLightFactorForShift). */
+  private readonly zoneLights: { light: THREE.Light; baseIntensity: number }[] = [];
 
   constructor(
     private readonly assetLoader: AssetLoader,
     stateMachine: ObjectStateMachine,
   ) {
-    this.scene.add(this.ambientLight, this.moonLight, createBoundaryFogWall());
+    this.scene.add(this.ambientLight, this.moonLight);
     this.scene.fog = createSceneFog();
     this.loadSkyBackground();
 
@@ -287,15 +390,48 @@ export class SceneManager {
       enableShadows(zoneScene);
       zoneRoot.add(zoneScene);
       this.staticGeometry = zoneScene;
+      // GLTFLoader материализует KHR_lights_punctual из зоны как реальные THREE.Light —
+      // в их числе запечённый "moon_light" (DirectionalLight, см. zone_lib.py
+      // build_moon_light): он без теней и существует в .glb для внешних инструментов/
+      // просмотра модели отдельно от игры — игра сама создаёт свой DirectionalLight
+      // с тенями (createMoonLight, Lighting.ts) в то же направление. Если оставить
+      // оба активными, они складываются — и тогда никакое затемнение второго (через
+      // applyShiftDarkness) не притушит общий свет, т.к. первый остаётся на полной
+      // яркости всегда. Отключаем запечённый дубликат; PointLight/SpotLight (фонарь
+      // на столбе, окна/лампа дома) — настоящие локальные светильники, не дубликаты,
+      // их не убираем, а копим в zoneLights, чтобы тоже гасить по ходу смен.
+      // Снимаем дубликаты ПОСЛЕ traverse, а не внутри колбэка: Object3D.traverse
+      // кэширует длину children перед циклом (см. three.core.js), и removeFromParent()
+      // прямо во время обхода сдвигает этот массив — следующий индекс оказывается за
+      // пределами уже укороченного массива, и .traverse() падает на undefined.
+      const duplicateDirectionalLights: THREE.Light[] = [];
       zoneScene.traverse((node) => {
+        if (node instanceof THREE.DirectionalLight) {
+          duplicateDirectionalLights.push(node);
+          return;
+        }
+        if (node instanceof THREE.PointLight || node instanceof THREE.SpotLight) {
+          this.zoneLights.push({ light: node, baseIntensity: node.intensity });
+          return;
+        }
         if (!(node instanceof THREE.Mesh)) return;
         const staticMatch = STATIC_CIRCLE_NAME_PATTERNS.find((p) => p.pattern.test(node.name));
-        if (staticMatch) {
-          this.staticCollisionCircles.push(computeBoundingCircle(node, staticMatch.vaultable));
+        if (FENCE_MESH_NAME_PATTERN.test(node.name)) {
+          this.staticCollisionRects.push(computeBoundingRect(node));
+          this.circleCoveredMeshes.add(node);
+        } else if (staticMatch) {
+          this.staticCollisionCircles.push(
+            computeBoundingCircle(node, staticMatch.vaultable, staticMatch.vaultRequiresSprint),
+          );
+          this.circleCoveredMeshes.add(node);
         } else if (ROCK_MESH_NAME_PATTERN.test(node.name)) {
-          this.staticCollisionCircles.push(...computeIslandCircles(node, ROCK_MIN_COLLISION_RADIUS, true));
+          this.staticCollisionCircles.push(
+            ...computeIslandCircles(node, ROCK_MIN_COLLISION_RADIUS, true, ROCK_SPRINT_REQUIRED_ABOVE_RADIUS),
+          );
+          this.circleCoveredMeshes.add(node);
         }
       });
+      for (const light of duplicateDirectionalLights) light.removeFromParent();
     } catch (error) {
       // Контент приходит от дизайнера постепенно — отсутствующая/битая модель зоны
       // не должна ронять весь игровой цикл: оставляем плейсхолдер-землю вместо
@@ -314,6 +450,7 @@ export class SceneManager {
     this.zoneRoot = zoneRoot;
     this.currentZoneId = layout.zoneId;
     this.currentLayout = layout;
+    this.computeItemAnchors(layout.objects);
   }
 
   private async spawnPlacedObject(placed: PlacedObject, parent: THREE.Group): Promise<void> {
@@ -339,7 +476,11 @@ export class SceneManager {
     instance.userData.objectId = placed.objectId;
     instance.userData.interactable = catalogEntry.interactable;
 
-    if (placed.objectId === LANTERN_OBJECT_ID) instance.add(createLanternLight());
+    if (placed.objectId === LANTERN_OBJECT_ID) {
+      const lanternLight = createLanternLight();
+      instance.add(lanternLight);
+      this.zoneLights.push({ light: lanternLight, baseIntensity: lanternLight.intensity });
+    }
 
     parent.add(instance);
     this.objectsById.set(placed.instanceId, instance);
@@ -357,6 +498,10 @@ export class SceneManager {
     this.zoneRoot = null;
     this.staticGeometry = null;
     this.staticCollisionCircles.length = 0;
+    this.staticCollisionRects.length = 0;
+    this.circleCoveredMeshes.clear();
+    this.itemAnchors.clear();
+    this.zoneLights.length = 0;
     this.interactableObjects.length = 0;
     this.objectsById.clear();
     this.baseObjectIdByInstance.clear();
@@ -399,7 +544,7 @@ export class SceneManager {
   reshufflePlacedObjects(): void {
     if (!this.currentLayout) return;
     this.shuffleGroupPositions(isGravestoneLikeObjectId);
-    this.shuffleGroupPositions(isPickupObjectId);
+    this.repositionPairedItems();
   }
 
   /** Постепенное затемнение по сменам (ambientIntensityForShift/moonIntensityForShift —
@@ -408,6 +553,9 @@ export class SceneManager {
   applyShiftDarkness(shiftIndex: number): void {
     this.ambientLight.intensity = ambientIntensityForShift(shiftIndex);
     this.moonLight.intensity = moonIntensityForShift(shiftIndex);
+    const localFactor = localLightFactorForShift(shiftIndex);
+    for (const { light, baseIntensity } of this.zoneLights) light.intensity = baseIntensity * localFactor;
+    this.scene.backgroundIntensity = skyBackgroundIntensityForShift(shiftIndex);
   }
 
   private shuffleGroupPositions(matches: (objectId: string) => boolean): void {
@@ -425,6 +573,65 @@ export class SceneManager {
       instance.position.set(slots[i].position.x, slots[i].position.y, slots[i].position.z);
       instance.rotation.y = THREE.MathUtils.degToRad(slots[i].rotationY);
     });
+  }
+
+  /** Считает для каждого горшка/цветов/венка ближайшее (на момент загрузки, по
+   *  авторской раскладке) надгробие — см. itemAnchors. Сам слот (ITEM_SLOTS) не
+   *  зависит от того, где именно предмет изначально стоял — только от вида. */
+  private computeItemAnchors(objects: readonly PlacedObject[]): void {
+    this.itemAnchors.clear();
+    const gravestones = objects.filter((o) => isGravestoneLikeObjectId(o.objectId));
+    for (const item of objects) {
+      const kind = itemKindOf(item.objectId);
+      if (!kind) continue;
+
+      let nearest: PlacedObject | null = null;
+      let nearestDistSq = Infinity;
+      for (const grave of gravestones) {
+        const dx = item.position.x - grave.position.x;
+        const dz = item.position.z - grave.position.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq;
+          nearest = grave;
+        }
+      }
+      if (!nearest) continue;
+      this.itemAnchors.set(item.instanceId, { gravestoneInstanceId: nearest.instanceId, kind });
+    }
+  }
+
+  /** Ставит каждый горшок/цветы/венок в его фиксированный слот (ITEM_SLOTS) у ЕГО
+   *  камня на новой, только что перемешанной позиции (см. itemAnchors) — вызывать
+   *  сразу после того, как shuffleGroupPositions(isGravestoneLikeObjectId) расставил
+   *  камни по новым местам. Один и тот же слот на любом камне — так у всех целых
+   *  надгробий горшок/цветы/венок стоят одинаково, независимо от того, где их
+   *  изначально расставил дизайнер и где камень оказался после перемешивания. */
+  private repositionPairedItems(): void {
+    if (!this.currentLayout) return;
+    const byInstanceId = new Map(this.currentLayout.objects.map((o) => [o.instanceId, o]));
+
+    for (const [itemInstanceId, anchor] of this.itemAnchors) {
+      const item = byInstanceId.get(itemInstanceId);
+      const grave = byInstanceId.get(anchor.gravestoneInstanceId);
+      if (!item || !grave) continue;
+
+      const slot = ITEM_SLOTS[anchor.kind];
+      const graveRad = THREE.MathUtils.degToRad(grave.rotationY);
+      const cos = Math.cos(graveRad);
+      const sin = Math.sin(graveRad);
+      item.position = {
+        x: grave.position.x + slot.x * cos - slot.z * sin,
+        y: item.position.y,
+        z: grave.position.z + slot.x * sin + slot.z * cos,
+      };
+      item.rotationY = grave.rotationY;
+
+      const instance = this.objectsById.get(itemInstanceId);
+      if (!instance) continue;
+      instance.position.set(item.position.x, item.position.y, item.position.z);
+      instance.rotation.y = THREE.MathUtils.degToRad(item.rotationY);
+    }
   }
 
   private handleStateChange(instanceId: string, state: ObjectState): void {
@@ -499,8 +706,9 @@ export class SceneManager {
   }
 
   /** Запасной визуал для состояний без готовой модели-варианта: FALLEN — завален
-   *  набок у своего места; DISPLACED — сдвинут в сторону от точки привязки;
-   *  остальное (в первую очередь NORMAL) — ровно на своём авторском месте. */
+   *  набок у своего места (или лёг плашмя — см. fallenLiesFlat); DISPLACED — сдвинут
+   *  в сторону от точки привязки; остальное (в первую очередь NORMAL) — ровно на
+   *  своём авторском месте. */
   private applyFallbackTransform(instanceId: string, state: ObjectState): void {
     const object = this.objectsById.get(instanceId);
     const anchor = this.getAnchorTransform(instanceId);
@@ -511,7 +719,19 @@ export class SceneManager {
     if (state === ObjectState.FALLEN) {
       object.position.set(anchor.position.x, anchor.position.y, anchor.position.z);
       object.rotation.set(0, anchorRotationRad, 0);
-      object.rotateZ(Math.random() < 0.5 ? FALLEN_TILT_RADIANS : -FALLEN_TILT_RADIANS);
+      const baseObjectId = this.baseObjectIdByInstance.get(instanceId);
+      const liesFlat = baseObjectId !== undefined && OBJECTS_CATALOG[baseObjectId]?.fallenLiesFlat;
+      if (liesFlat) {
+        // NORMAL уже стоит вертикально ("на хвостах ленты", лицом к +Z — см.
+        // objects.catalog.ts); рядовой топпл вокруг Z (как у надгробий) оставил бы
+        // его вертикальным, просто повёрнутым на ребро — визуально "висит без опоры".
+        // Вместо этого кладём плашмя поворотом вокруг X, ВСЕГДА в сторону локального
+        // +Z (наружу, от надгробия, к которому он был прислонён), а не в случайную
+        // сторону — иначе на -Z он лёг бы прямо в основание камня.
+        object.rotateX(FALLEN_TILT_RADIANS);
+      } else {
+        object.rotateZ(Math.random() < 0.5 ? FALLEN_TILT_RADIANS : -FALLEN_TILT_RADIANS);
+      }
       return;
     }
 
@@ -586,6 +806,13 @@ export class SceneManager {
     return meshes;
   }
 
+  /** Меши из staticGeometry, уже имеющие свой круг-коллайдер — PlayerController
+   *  отбрасывает попадания луча по ним (см. circleCoveredMeshes), чтобы прыжок
+   *  с разбега не наталкивался на ту же геометрию через луч в обход vaultable-круга. */
+  getRaycastExcludedMeshes(): ReadonlySet<THREE.Object3D> {
+    return this.circleCoveredMeshes;
+  }
+
   /** Круги-коллайдеры для расставленных непроходимых объектов (надгробия и т.п.,
    *  у которых в каталоге задан collisionRadius) — считается по их текущей,
    *  а не исходной позиции (DISPLACED/FALLEN/MISSING могут их сдвигать), и по
@@ -604,5 +831,11 @@ export class SceneManager {
       });
     }
     return circles;
+  }
+
+  /** Прямоугольники-коллайдеры ограды (см. FENCE_MESH_NAME_PATTERN) — считаются один
+   *  раз при загрузке зоны, забор не двигается и не меняет состояние. */
+  getCollisionRects(): readonly CollisionRect[] {
+    return this.staticCollisionRects;
   }
 }

@@ -5,9 +5,24 @@ import { ShiftManager } from "@/systems/ShiftManager";
 import { SceneManager } from "@/core/SceneManager";
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0x3a3a1a);
-const HIGHLIGHT_INTENSITY = 0.8;
+// Эмиссия складывается с итоговым цветом НАПРЯМУЮ, а не умножается на свет сцены —
+// при 0.8 и прежнем ambient/moon (0.6/1.5) это тонуло в общей яркости, читалось как
+// лёгкая подсветка. После того как смены стали сильно темнее (Lighting.ts,
+// ambient/moon садятся до 0.006/0.012), та же эмиссия — ТЕПЕРЬ самая яркая вещь на
+// экране независимо от освещения смены: объект в фокусе выглядит сплошным плоским
+// пятном без текстуры/теней вместо надгробия. Подсветка не должна перебивать
+// собственное освещение объекта, а лишь слегка подчёркивать его.
+const HIGHLIGHT_INTENSITY = 0.18;
 const DEFAULT_REPAIR_SEC = 2;
-const PLACEMENT_RADIUS = 2;
+// Только по горизонтали (XZ), без учёта роста камеры — см. putDownCarried. 2 м
+// (с учётом высоты камеры в 3D-дистанции) принимали постановку практически с любой
+// стороны камня: горшок/цветы/венок стоят в фиксированном слоте в 0.14-0.5 м от
+// центра камня (ITEM_SLOTS, SceneManager.ts), а коллизия камня держит игрока не
+// ближе ~0.75 м от центра — так что "подойти с правильной стороны" и "встать с
+// противоположной" отличались на несколько десятков сантиметров, тонувших в 2 м
+// радиуса. 0.8 м достаточно, чтобы принять подход от нужного слота (~0.24 м до
+// него) и отклонить подход с противоположной стороны камня (~1.2 м).
+const PLACEMENT_RADIUS = 0.8;
 const MAX_INTERACT_DISTANCE = 3.5;
 const CARRY_SPEED_MULTIPLIER = 0.7;
 const CARRY_OFFSET = new THREE.Vector3(0.25, -0.3, -0.8);
@@ -185,10 +200,12 @@ export class InteractionSystem {
     this.camera.getWorldPosition(playerPosition);
 
     const anchor = this.sceneManager.getAnchorTransform(instanceId);
-    const anchorPosition = anchor
-      ? new THREE.Vector3(anchor.position.x, anchor.position.y, anchor.position.z)
-      : null;
-    const atAnchor = anchorPosition !== null && playerPosition.distanceTo(anchorPosition) <= PLACEMENT_RADIUS;
+    // XZ-only — высота камеры (~1.6м) над якорем на уровне земли иначе сама по себе
+    // съедала бы большую часть PLACEMENT_RADIUS, независимо от того, с какой стороны
+    // камня стоит игрок (см. комментарий у PLACEMENT_RADIUS).
+    const atAnchor =
+      anchor !== null &&
+      Math.hypot(playerPosition.x - anchor.position.x, playerPosition.z - anchor.position.z) <= PLACEMENT_RADIUS;
 
     if (atAnchor && anchor) {
       this.sceneManager.placeCarriedObject(object, anchor.position, anchor.rotationY);
