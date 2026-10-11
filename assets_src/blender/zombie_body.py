@@ -22,7 +22,7 @@ LEATHER = (0.030, 0.022, 0.016)                                    # тёмна�
 CHEST = [(-0.04, 0.080, 0.116, 0.000), (0.04, 0.078, 0.118, 0.000), (0.13, 0.086, 0.126, 0.000), (0.22, 0.096, 0.142, 0.000),
          (0.31, 0.102, 0.156, 0.000), (0.37, 0.098, 0.158, 0.000), (0.41, 0.084, 0.138, 0.004), (0.44, 0.060, 0.082, 0.008),
          (0.465, 0.043, 0.050, 0.010)]
-NECK_Z = 0.56                                   # шарнир головы в системе туловища
+NECK_Z = 0.575                                   # шарнир головы в системе туловища
 SHOULDER = (0.172, 0.0, 0.385)                  # шарнир плеча (левое; правое — зеркально)
 
 
@@ -59,10 +59,10 @@ def part_chest(rnd):
     G.tube(bm, rnd, [V((0, front_y(z, 0, 0.003), z)) for z in (0.26, 0.33, 0.40, 0.435)], [(0.006, 0.011)] * 4, 5, SKIN, LIGHT,
            up=(0, -1, 0), caps=(True, True))                                                                              # грудина
     # ---- шея с сухожилиями
-    G.tube(bm, rnd, [V((0, 0.012, 0.44)), V((0, 0.010, 0.51)), V((0, 0.010, 0.585))], [(0.036, 0.036), (0.033, 0.033), (0.031, 0.031)], 8,
+    G.tube(bm, rnd, [V((0, 0.012, 0.44)), V((0, 0.010, 0.52)), V((0, 0.010, 0.600))], [(0.036, 0.036), (0.033, 0.033), (0.031, 0.031)], 8,
            SKIN, lambda p: skin_f(p, 4), up=(0, -1, 0), caps=(False, True), jit=0.03)
     for sx in (-1, 1):
-        G.tube(bm, rnd, [V((sx * 0.030, -0.006, 0.560)), V((sx * 0.020, -0.030, 0.505)), V((sx * 0.010, -0.040, 0.458))],
+        G.tube(bm, rnd, [V((sx * 0.030, -0.006, 0.570)), V((sx * 0.020, -0.030, 0.510)), V((sx * 0.010, -0.040, 0.458))],
                [0.0075, 0.0085, 0.0075], 5, SKIN, LIGHT, caps=(True, True))
     # ---- нательная рубашка: порвана V-вырезом и дырами, бахрома на подоле
     zs = [-0.05, 0.02, 0.10, 0.20, 0.29, 0.36, 0.415, 0.445]
@@ -71,7 +71,7 @@ def part_chest(rnd):
     for z in zs:
         a, b, yc = chest_ab(z, 0.011)
         rings.append([V((sx_point(a, b, k * math.tau / seg)[0], yc + sx_point(a, b, k * math.tau / seg)[1], z)) for k in range(seg)])
-    shirt = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 6, 0.62), (0.9, 0.95, 1.05)))
+    shirt = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 6, 0.72), (0.92, 0.96, 1.04)))
     faces, rv = G.bridge(bm, rings, CLOTH, shirt, rnd, caps=(False, False), closed=True, jit=0.09)
     delete_faces(bm, lambda c: c.y < -0.04 and c.z > 0.17 and abs(c.x) < 0.012 + (c.z - 0.17) * 0.40)            # V-вырез
     delete_faces(bm, lambda c: c.y < -0.07 and 0.07 < c.z < 0.15 and 0.03 < c.x < 0.10)                           # дыра на животе
@@ -114,6 +114,15 @@ def part_chest(rnd):
         a, b = 0.056 + d, 0.064 + d
         cr.append([V((sx_point(a, b, th)[0], 0.012 + sx_point(a, b, th)[1], z)) for th in [1.55 + (math.tau - 3.10) * k / 8 for k in range(9)]])
     G.bridge(bm, cr, CLOTH, lambda p: cloth_f(p, 11, 0.9), rnd, closed=False)
+    rings = []                                                                                                      # воротник рубашки с острыми концами
+    for z, r in ((0.462, 0.056), (0.514, 0.068)):
+        rings.append([V((sx_point(r, r, th, 2.0)[0], 0.012 + sx_point(r, r, th, 2.0)[1], z))
+                      for th in [0.55 + (math.tau - 1.10) * k / 10 for k in range(11)]])
+    faces, rv = G.bridge(bm, rings, CLOTH, lambda p: cloth_f(p, 31, 0.55), rnd, caps=(False, False), closed=False, jit=0.06)
+    for idx, sgn in ((0, 1), (-1, -1)):
+        vb, vt = rv[0][idx], rv[1][idx]
+        f = bm.faces.new((vb, vt, bm.verts.new(vt.co + V((sgn * 0.024, -0.030, -0.044)))))
+        G.paint(bm, [f], lambda p: cloth_f(p, 32, 0.55), rnd, CLOTH, 0.08)
     for (px, pz, pw, ph, tilt) in ((-0.07, 0.17, 0.075, 0.085, 0.10), (0.06, 0.27, 0.060, 0.070, -0.12)):             # заплатки на спине
         yb = chest_ab(pz, 0.0)[0] + 0.046
         G.box(bm, rnd, (px, yb, pz), (pw * 1.14, 0.004, ph * 1.14), lambda p: cloth_f(p, 22, 0.45), rot=(0, tilt, 0), mi=CLOTH)      # обшивка
@@ -146,7 +155,7 @@ HIP = (0.092, 0.0, -0.07)                       # шарнир бедра (ле�
 
 def part_pelvis(rnd):
     bm = bmesh.new()
-    shorts = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 12, 0.95), (0.66, 0.64, 0.62)))
+    shorts = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 12, 0.95), (0.80, 0.78, 0.76)))
     seg = 14
     rings = []
     for z, a, b in PELVIS:
@@ -173,8 +182,8 @@ def part_pelvis(rnd):
 
 # ============================================================================ руки (шарнир — плечо / локоть / запястье; вниз по −Z)
 UPPER_LEN, FORE_LEN = 0.285, 0.255
-UPPER = [(0.0, 0.046, 0.046), (-0.06, 0.037, 0.038), (-0.14, 0.031, 0.032), (-0.22, 0.030, 0.031), (-UPPER_LEN, 0.033, 0.034)]
-FORE = [(0.0, 0.034, 0.036), (-0.06, 0.029, 0.033), (-0.14, 0.025, 0.028), (-0.21, 0.020, 0.025), (-FORE_LEN, 0.019, 0.024)]
+UPPER = [(z, a * 1.16, b * 1.16) for z, a, b in [(0.0, 0.046, 0.046), (-0.06, 0.037, 0.038), (-0.14, 0.031, 0.032), (-0.22, 0.030, 0.031), (-UPPER_LEN, 0.033, 0.034)]]
+FORE = [(z, a * 1.16, b * 1.16) for z, a, b in [(0.0, 0.034, 0.036), (-0.06, 0.029, 0.033), (-0.14, 0.025, 0.028), (-0.21, 0.020, 0.025), (-FORE_LEN, 0.019, 0.024)]]
 
 
 def part_upper_arm(rnd, side):
@@ -252,8 +261,8 @@ def part_hand(rnd, side):
 
 # ============================================================================ ноги (шарнир — бедро / колено / лодыжка; вниз по −Z)
 THIGH_LEN, SHIN_LEN, ANKLE_H = 0.41, 0.38, 0.09
-THIGH = [(0.0, 0.070, 0.072), (-0.10, 0.064, 0.066), (-0.22, 0.052, 0.055), (-0.32, 0.044, 0.046), (-THIGH_LEN, 0.040, 0.042)]
-SHIN = [(0.0, 0.042, 0.044), (-0.06, 0.038, 0.040), (-0.16, 0.031, 0.032), (-0.27, 0.026, 0.028), (-SHIN_LEN, 0.028, 0.030)]
+THIGH = [(z, a * 1.10, b * 1.10) for z, a, b in [(0.0, 0.070, 0.072), (-0.10, 0.064, 0.066), (-0.22, 0.052, 0.055), (-0.32, 0.044, 0.046), (-THIGH_LEN, 0.040, 0.042)]]
+SHIN = [(z, a * 1.12, b * 1.12) for z, a, b in [(0.0, 0.042, 0.044), (-0.06, 0.038, 0.040), (-0.16, 0.031, 0.032), (-0.27, 0.026, 0.028), (-SHIN_LEN, 0.028, 0.030)]]
 
 
 def part_thigh(rnd, side):
@@ -266,7 +275,7 @@ def part_thigh(rnd, side):
         G.blob(bm, rnd, (sx * 0.029, 0.004, -THIGH_LEN + 0.002), (0.020, 0.024, 0.026), skin, SKIN, jitter=0.08)           # мыщелки
     sh = [(0.045, 0.088, 0.090), (-0.05, 0.080, 0.082), (-0.15, 0.078, 0.080), (-0.225, 0.084, 0.086)]
     rings = [G.ring(V((0, 0, z)), V((0, -1, 0)), V((1, 0, 0)), a, b, 10, rnd=rnd, jit=0.03) for z, a, b in sh]
-    shorts = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 34 + side, 0.95), (0.66, 0.64, 0.62)))
+    shorts = lambda p: tuple(c * k for c, k in zip(cloth_f(p, 34 + side, 0.95), (0.80, 0.78, 0.76)))
     faces, rv = G.bridge(bm, rings, CLOTH, shorts, rnd, caps=(False, False), closed=True, jit=0.08)
     ragged(rv[-1], rnd, 0.04)
     hem = [v.co.copy() for v in rv[-1]]
@@ -292,7 +301,7 @@ def part_shin(rnd, side):
     # голенище ботинка с отворотом и шнуровкой
     sh = [(-0.205, 0.066, 0.068), (-0.222, 0.059, 0.062), (-0.255, 0.055, 0.058), (-0.34, 0.051, 0.053), (-0.390, 0.053, 0.055)]
     rings = [G.ring(V((0, 0, z)), V((0, -1, 0)), V((1, 0, 0)), a, b, 10, rnd=rnd, jit=0.02) for z, a, b in sh]
-    boot = lambda p: tuple(c * 0.74 for c in cloth_f(p, 48 + side, 0.82))
+    boot = lambda p: tuple(c * 0.90 for c in cloth_f(p, 48 + side, 0.82))
     faces, rv = G.bridge(bm, rings, CLOTH, boot, rnd, caps=(False, False), closed=True, jit=0.07)
     for z0, ang in ((-0.245, 0.4), (-0.285, -0.3), (-0.325, 0.35), (-0.360, -0.35)):
         a = 0.055 + 0.0 * z0
@@ -310,7 +319,7 @@ SOLE = 0.024                                                     # толщин�
 def part_foot(rnd, side):
     """Ботинок ниже голенища: подошва, каблук, носок, шнуровка; шарнир — лодыжка, подошва на z = −ANKLE_H, носок вперёд (−Y)."""
     bm = bmesh.new()
-    boot = lambda p: tuple(c * 0.74 for c in cloth_f(p, 52 + side, 0.82))
+    boot = lambda p: tuple(c * 0.90 for c in cloth_f(p, 52 + side, 0.82))
     zb = -ANKLE_H + SOLE
     pts = [V((0, y, (top + zb) / 2)) for y, w, top in FOOT]
     rad = [((top - zb) / 2, w) for y, w, top in FOOT]

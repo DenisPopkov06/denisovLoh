@@ -13,8 +13,10 @@ import numpy as np
 import zone_lib as Z
 
 SIZE = 512
-SKIN_PALETTE = [(0.60, 0.55, 0.40), (0.64, 0.58, 0.44), (0.55, 0.53, 0.42), (0.50, 0.43, 0.33), (0.61, 0.57, 0.45)]
-CLOTH_PALETTE = [(0.42, 0.31, 0.22), (0.34, 0.25, 0.18), (0.49, 0.37, 0.26), (0.37, 0.31, 0.24), (0.28, 0.21, 0.15)]
+# кожа — камуфляж чётких плоских ячеек: хаки, песочный, оливковый, тёмно-оливковый, бурый, почти чёрно-бурый (sRGB, вес)
+SKIN_CELLS = [((0.64, 0.56, 0.40), 0.34), ((0.70, 0.62, 0.45), 0.20), ((0.58, 0.51, 0.36), 0.22), ((0.50, 0.46, 0.31), 0.12),
+              ((0.40, 0.32, 0.23), 0.09), ((0.26, 0.20, 0.14), 0.03)]
+CLOTH_PALETTE = [(0.34, 0.28, 0.23), (0.27, 0.22, 0.18), (0.41, 0.34, 0.27), (0.31, 0.29, 0.27), (0.21, 0.17, 0.14)]
 
 
 def _smoothstep(a, b, x):
@@ -43,12 +45,15 @@ def fbm(rng, base, octaves=4, size=SIZE):
     return out / tot
 
 
-def voronoi(rng, cells, size=SIZE, jitter=0.85):
-    """Бесшовные ячейки: расстояния до ближайшей (d1) и второй (d2) точек и номер ближайшей."""
+def voronoi(rng, cells, size=SIZE, jitter=0.85, warp=0.0):
+    """Бесшовные ячейки: расстояния до ближайшей (d1) и второй (d2) точек и номер ближайшей; warp — искажение границ (рваные края)."""
     pts = (np.stack(np.meshgrid(np.arange(cells), np.arange(cells), indexing="ij"), -1) + 0.5
            + (rng.random((cells, cells, 2)) - 0.5) * jitter) / cells                  # [ix, iy] → (x, y)
     ys, xs = (np.mgrid[0:size, 0:size] + 0.5) / size
-    cx, cy = (xs * cells).astype(int), (ys * cells).astype(int)
+    if warp:
+        xs = xs + (fbm(rng, 6, 3, size) - 0.5) * warp
+        ys = ys + (fbm(rng, 6, 3, size) - 0.5) * warp
+    cx, cy = np.floor(xs * cells).astype(int), np.floor(ys * cells).astype(int)
     d1, d2, ident = np.full(xs.shape, 9.0), np.full(xs.shape, 9.0), np.zeros(xs.shape, int)
     for dx in range(-2, 3):
         for dy in range(-2, 3):
@@ -83,45 +88,57 @@ def _normal_from_height(h, slope):
 
 
 def skin_set(seed=11):
+    """Албедо: ~7×7 крупных ячеек-плоскостей с чёткими краями, цвет ячейки — из палитры по крупному шуму (пятна кластерами) и случаю."""
     rng = np.random.default_rng(seed)
-    d1, d2, ident = voronoi(rng, 14)
-    cell_rand = np.random.default_rng(seed + 1).random(196)[ident]
-    big = fbm(rng, 3, 3)                                                  # крупные камуфляжные пятна
-    big = np.clip((big - 0.5) * 1.3 + 0.5, 0, 1)
-    t = np.clip(big * 0.75 + cell_rand * 0.25, 0, 1)                       # ячейка слегка «сдвигает» тон
-    col = _palette_color(SKIN_PALETTE, t) * (0.93 + 0.12 * cell_rand)[..., None]
-    edge = np.clip((d2 - d1) * 11.0, 0, 1)                                # 0 на границе ячеек
-    col *= (0.95 + 0.05 * _smoothstep(0.0, 0.5, edge))[..., None]
-    grain = fbm(rng, 24, 2)
-    col *= (0.93 + 0.14 * grain)[..., None]
-    dirt = np.clip((fbm(rng, 5, 3) - 0.60) * 3, 0, 1)                     # грязь и синюшные пятна
-    col = col * (1 - 0.35 * dirt[..., None]) + np.array((0.22, 0.20, 0.20)) * 0.35 * dirt[..., None]
-    height = 0.55 * cell_rand + 0.9 * _smoothstep(0.0, 0.6, edge) + 0.25 * grain
-    nrm = _normal_from_height(height, 0.10)
-    rough = np.clip(0.80 + 0.10 * (cell_rand - 0.5) - 0.10 * edge + 0.05 * grain, 0.5, 1.0)
-    ao = 0.70 + 0.30 * _smoothstep(0.0, 0.6, edge)
+    cells = 10
+    d1, d2, ident = voronoi(rng, cells, jitter=0.9, warp=0.06)
+    r = np.random.default_rng(seed + 1)
+    cell_rand = r.random(cells * cells)
+    big = fbm(rng, 3, 3)
+    ys, xs = (np.mgrid[0:SIZE, 0:SIZE] + 0.5) / SIZE
+    # шум в центре ячейки: берём среднее по ячейке через ident
+    sums = np.bincount(ident.ravel(), weights=big.ravel(), minlength=cells * cells)
+    cnt = np.maximum(np.bincount(ident.ravel(), minlength=cells * cells), 1)
+    cell_noise = sums / cnt
+    score = np.clip((cell_noise - cell_noise.min()) / (np.ptp(cell_noise) + 1e-9) * 0.65 + cell_rand * 0.35, 0, 0.9999)
+    w = np.array([c[1] for c in SKIN_CELLS]); w = np.cumsum(w) / w.sum()
+    idx = np.searchsorted(w, score)
+    pal = np.array([c[0] for c in SKIN_CELLS])
+    col = pal[idx[ident]] * (0.94 + 0.12 * r.random(cells * cells)[ident])[..., None]
+    grad = fbm(rng, 5, 3)
+    col *= (0.95 + 0.10 * grad)[..., None]                                    # лёгкий градиент внутри ячеек
+    edge = np.clip((d2 - d1) * 24.0, 0, 1)
+    col *= (0.985 + 0.015 * edge)[..., None]                                  # края ячеек почти не видны
+    grain = fbm(rng, 40, 2)
+    col *= (0.96 + 0.08 * grain)[..., None]
+    height = 0.6 * cell_rand[ident] + 0.9 * _smoothstep(0.0, 0.5, edge) + 0.25 * grain
+    nrm = _normal_from_height(height, 0.06)
+    rough = np.clip(0.62 + 0.14 * (cell_rand[ident] - 0.5) - 0.06 * (1 - edge) + 0.04 * grain, 0.4, 0.9)
+    ao = 0.80 + 0.20 * _smoothstep(0.0, 0.6, edge)
     return np.clip(col, 0, 1), nrm, ao, rough
 
 
 def cloth_set(seed=23):
+    """Албедо: тёмная серо-коричневая ткань с пятнами и тонкими трещинками-складками (как образец «Альбедо (одежда)»)."""
     rng = np.random.default_rng(seed)
-    d1, d2, ident = voronoi(rng, 10, jitter=0.9)
+    d1, d2, ident = voronoi(rng, 10, jitter=0.95, warp=0.05)
     cell_rand = np.random.default_rng(seed + 1).random(100)[ident]
     big = fbm(rng, 3, 4)
-    t = np.clip((big - 0.5) * 1.5 + 0.5, 0, 1) * 0.80 + cell_rand * 0.20
+    t = np.clip((big - 0.5) * 1.7 + 0.5, 0, 1) * 0.75 + cell_rand * 0.25
     col = _palette_color(CLOTH_PALETTE, t)
-    ys, xs = np.mgrid[0:SIZE, 0:SIZE] / SIZE
-    weave = 0.5 + 0.5 * np.sin(xs * 2 * np.pi * 24) * np.sin(ys * 2 * np.pi * 24)      # лёгкое плетение (мельче — даёт муар)
     wear = fbm(rng, 6, 4)
-    col *= (0.92 + 0.05 * weave + 0.14 * wear)[..., None]
-    stain = np.clip((fbm(rng, 4, 3) - 0.56) * 4, 0, 1)                     # бурые пятна и грязь
-    col = col * (1 - 0.5 * stain[..., None]) + np.array((0.16, 0.08, 0.05)) * 0.5 * stain[..., None]
-    edge = np.clip((d2 - d1) * 12.0, 0, 1)                                 # складки — границы ячеек
-    col *= (0.93 + 0.07 * _smoothstep(0.0, 0.5, edge))[..., None]
-    height = 0.3 * weave + 0.4 * _smoothstep(0.0, 0.5, edge) + 0.4 * wear
-    nrm = _normal_from_height(height, 0.08)
-    rough = np.clip(0.90 + 0.06 * (wear - 0.5) - 0.06 * stain, 0.6, 1.0)
-    ao = 0.72 + 0.28 * _smoothstep(0.0, 0.5, edge)
+    col *= (0.90 + 0.18 * wear)[..., None]
+    stain = np.clip((fbm(rng, 4, 3) - 0.58) * 3.5, 0, 1)                      # тёмные пятна грязи
+    col = col * (1 - 0.40 * stain[..., None]) + np.array((0.10, 0.07, 0.05)) * 0.40 * stain[..., None]
+    edge = np.clip((d2 - d1) * 40.0, 0, 1)                                    # тонкие трещинки по краям ячеек
+    vis = 0.35 + 0.65 * fbm(rng, 4, 3)                                         # где-то трещинки заметнее, где-то почти нет
+    col *= (1.0 - vis * 0.22 * (1 - edge))[..., None]
+    fine = fbm(rng, 48, 2)
+    col *= (0.95 + 0.10 * fine)[..., None]
+    height = 0.5 * cell_rand + 0.9 * _smoothstep(0.0, 0.4, edge) + 0.3 * wear
+    nrm = _normal_from_height(height, 0.07)
+    rough = np.clip(0.70 + 0.10 * (wear - 0.5) - 0.05 * stain + 0.05 * (cell_rand - 0.5), 0.5, 0.95)
+    ao = 0.75 + 0.25 * _smoothstep(0.0, 0.4, edge)
     return np.clip(col, 0, 1), nrm, ao, rough
 
 
@@ -155,5 +172,5 @@ def make_materials():
     skin = Z.tile_material("mat_zombie_skin", "zombie_skin", culling=True, vcolor=True)
     cloth = Z.tile_material("mat_zombie_cloth", "zombie_cloth", culling=False, vcolor=True)
     misc = Z.flat_material("mat_zombie_misc", rough=0.8, vcolor=True)
-    eyes = Z.flat_material("mat_zombie_eyes", (0.66, 0.76, 0.56), rough=0.5, emission=((0.66, 0.76, 0.56), 1.5))
+    eyes = Z.flat_material("mat_zombie_eyes", (0.05, 0.05, 0.05), rough=0.4, emission=((0.44, 0.46, 0.42), 1.0))
     return [skin, cloth, misc, eyes]

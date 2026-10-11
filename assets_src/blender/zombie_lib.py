@@ -45,7 +45,7 @@ JOINTS = {"pelvis": (NAME, (0, 0, 0)), "chest": ("pelvis", (0, 0, 0.10)), "head"
           "foot_l": ("shin_l", (0, 0, -B.SHIN_LEN)), "foot_r": ("shin_r", (0, 0, -B.SHIN_LEN))}
 
 # поза (градусы; вперёд для «вверх-торчащих» частей — +X, для свисающих — −X; ноги — через IK)
-POSE = dict(pelvis_pos=(0.0, -0.04, 0.885), pelvis=(10, 0, 3), chest=(34, 0, -5), head=(-24, 5, 8), jaw=(16, 0, 0),
+POSE = dict(pelvis_pos=(0.0, -0.04, 0.885), pelvis=(10, 0, 3), chest=(34, 0, -5), head=(-24, 5, 8), jaw=(0, 0, 0),
             upper_l=(-22, -12, 0), upper_r=(-28, 11, 0), fore_l=(-46, 0, 0), fore_r=(-40, 0, 0), hand_l=(-14, 0, 0), hand_r=(-20, 0, 0),
             foot_l=(0.190, -0.17, 20), foot_r=(-0.170, 0.11, -24))
 
