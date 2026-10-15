@@ -6,6 +6,12 @@ const MIN_FLASHLIGHT_CHARGE = 40;
 const MISSING_SEARCH_RADIUS = 3;
 const MISSING_MIN_DISTANCE = 1;
 
+/** Смена, с которой появляется зомби (ZombieSystem) и с которой заново запускается
+ *  затемнение карты (см. Lighting.ts darknessRampProgress) — "после 3-го левела".
+ *  Общий для Game.ts (когда активировать зомби), Lighting.ts (когда перезапустить
+ *  рампу) и ZombieSystem.ts (от какой смены считать разгон скорости). */
+export const ZOMBIE_APPEARS_AT_SHIFT = 4;
+
 function pickRandom<T>(items: readonly T[], count: number): T[] {
   const shuffled = [...items];
   for (let i = shuffled.length - 1; i > 0; i--) {

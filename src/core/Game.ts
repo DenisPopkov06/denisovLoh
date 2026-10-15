@@ -10,8 +10,10 @@ import { StaminaSystem } from "@/systems/StaminaSystem";
 import { InteractionSystem } from "@/systems/InteractionSystem";
 import { ObjectStateMachine } from "@/systems/ObjectStateMachine";
 import { ShiftManager, type ShiftEndReason } from "@/systems/ShiftManager";
-import { getShiftConfig } from "@/systems/DifficultyScaler";
+import { getShiftConfig, ZOMBIE_APPEARS_AT_SHIFT } from "@/systems/DifficultyScaler";
 import { HintSystem } from "@/systems/HintSystem";
+import { HealthSystem } from "@/systems/HealthSystem";
+import { ZombieSystem } from "@/systems/ZombieSystem";
 import { SaveSystem } from "@/systems/SaveSystem";
 import { trackEvent } from "@/sdk/Analytics";
 import { showFullscreenAd } from "@/sdk/Ads";
@@ -36,6 +38,8 @@ export class Game {
   readonly flashlight = new FlashlightSystem();
   private readonly stamina = new StaminaSystem();
   private readonly interaction: InteractionSystem;
+  private readonly health = new HealthSystem();
+  private readonly zombie: ZombieSystem;
   readonly shiftManager: ShiftManager;
   readonly hintSystem: HintSystem;
   private readonly saveSystem = new SaveSystem();
@@ -68,6 +72,7 @@ export class Game {
     this.postProcessing = createPostProcessing(this.renderer, this.sceneManager.scene, this.camera);
 
     this.playerController = new PlayerController(this.camera, this.input);
+    this.zombie = new ZombieSystem(this.sceneManager);
     this.shiftManager = new ShiftManager(this.stateMachine, (reason) => this.onShiftEnd(reason));
     this.interaction = new InteractionSystem(
       this.camera,
@@ -148,6 +153,7 @@ export class Game {
       this.flashlight.update(deltaSec);
       this.hintSystem.update(deltaSec);
       this.sceneManager.updateAnimations(deltaSec);
+      this.updateZombie(deltaSec);
 
       const holdingInteract = this.input.isKeyDown("KeyE");
       this.interaction.update(this.sceneManager.getInteractableObjects(), holdingInteract, deltaSec);
@@ -168,7 +174,33 @@ export class Game {
       // хоть курсор формально и не захвачен.
       pointerLocked:
         this.pauseMenu.isVisible() || this.shiftReportScreen.isVisible() || this.input.isPointerLocked(),
+      healthPercent: this.health.getHealthPercent(),
+      // Полоска жизней не нужна, пока зомби ещё не может появиться — не пугать
+      // раньше времени неиспользуемым элементом интерфейса.
+      healthVisible: this.zombie.isActive(),
     });
+  }
+
+  /** Двигает зомби к игроку (если он уже появился — см. startShift) и снимает жизни,
+   *  если подошёл слишком близко; при полном исчерпании жизней проваливает смену
+   *  тем же путём, что и исчерпание времени (ShiftManager.failShift). */
+  private updateZombie(deltaSec: number): void {
+    if (!this.zombie.isActive()) return;
+
+    const activeShiftIndex = this.shiftManager.getCurrentConfig()?.shiftIndex ?? ZOMBIE_APPEARS_AT_SHIFT;
+    const distance = this.zombie.update(
+      deltaSec,
+      this.camera.position,
+      activeShiftIndex,
+      this.sceneManager.getCollisionCircles(),
+      this.sceneManager.getCollisionRects(),
+      this.sceneManager.getStaticCollisionMeshes(),
+      this.sceneManager.getRaycastExcludedMeshes(),
+    );
+
+    const damagePerSecond = this.zombie.isWithinAttackRange(distance) ? this.zombie.getDamagePerSecond() : 0;
+    this.health.damage(damagePerSecond, deltaSec);
+    if (this.health.isDead()) this.shiftManager.failShift("caught_by_zombie");
   }
 
   private buildHudTasks(): HUDTask[] {
@@ -216,6 +248,15 @@ export class Game {
     const config = getShiftConfig(this.currentShiftIndex, layout.zoneId, layout.objects);
     this.shiftManager.startShift(config);
 
+    // Жизни — полный запас на каждую смену (как заряд фонарика/стамина), иначе
+    // поражение от зомби в одной смене тянулось бы шлейфом в следующую. Зомби
+    // появляется один раз на ZOMBIE_APPEARS_AT_SHIFT и дальше остаётся активным
+    // во всех следующих сменах подряд (повторный activate() — no-op).
+    this.health.reset();
+    if (this.currentShiftIndex >= ZOMBIE_APPEARS_AT_SHIFT) {
+      void this.zombie.activate(this.camera.position);
+    }
+
     // ShiftManager уже перевёл объекты в MISSING в ObjectStateMachine — здесь только
     // физически "роняем" соответствующий инстанс в точку spawnPosition (в траву рядом).
     for (const task of config.tasks) {
@@ -252,12 +293,18 @@ export class Game {
     // Теперь при поражении откатываем к 1-й смене: игра начинается заново, а не
     // продолжается с того места, где не вышло уложиться в срок.
     const won = reason === "all_tasks_done";
-    if (!won) this.currentShiftIndex = 1;
+    if (!won) {
+      this.currentShiftIndex = 1;
+      // Следующая попытка снова начнётся с 1-й смены, до ZOMBIE_APPEARS_AT_SHIFT —
+      // зомби там быть не должно (появится заново, когда смены дойдут до неё).
+      this.zombie.deactivate();
+    }
     trackEvent({ name: "shift_end", shiftIndex, reason });
     void this.persistShiftProgress(this.currentShiftIndex);
 
     this.shiftReportScreen.show({
       won,
+      reason,
       tasksCompleted: this.shiftManager.getCompletedCount(),
       tasksTotal: config?.tasks.length ?? 0,
       timeSpentSec: config ? config.timeLimitSec - this.clock.getShiftRemainingSec() : 0,

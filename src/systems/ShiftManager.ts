@@ -1,7 +1,7 @@
 import { ObjectState, type ShiftConfig } from "@/data/types";
 import { ObjectStateMachine } from "@/systems/ObjectStateMachine";
 
-export type ShiftEndReason = "time_out" | "all_tasks_done";
+export type ShiftEndReason = "time_out" | "all_tasks_done" | "caught_by_zombie";
 
 export class ShiftManager {
   private currentConfig: ShiftConfig | null = null;
@@ -43,6 +43,14 @@ export class ShiftManager {
   update(remainingSec: number): void {
     if (this.ended || !this.currentConfig) return;
     if (remainingSec <= 0) this.endShift("time_out");
+  }
+
+  /** Проваливает смену извне (игрока поймал зомби — см. Game.update()/ZombieSystem) —
+   *  тот же путь завершения, что и time_out: пауза, сброс currentShiftIndex на 1,
+   *  экран "Смена провалена". Без эффекта, если смена уже закончилась. */
+  failShift(reason: Exclude<ShiftEndReason, "all_tasks_done">): void {
+    if (this.ended || !this.currentConfig) return;
+    this.endShift(reason);
   }
 
   isShiftComplete(): boolean {
