@@ -10,10 +10,14 @@ import { ZOMBIE_APPEARS_AT_SHIFT } from "@/systems/DifficultyScaler";
 function makeFakeSceneManager(
   circles: CollisionCircle[] = [],
   rects: CollisionRect[] = [],
-): SceneManager & { position: Vec3 | null; animationSpeed: number } {
+): SceneManager & { position: Vec3 | null; animationSpeed: number; animation: string | null } {
   const fake = {
     position: null as Vec3 | null,
     animationSpeed: 1,
+    animation: null as string | null,
+    playZombieAnimation: (name: string) => {
+      fake.animation = name;
+    },
     spawnZombie: vi.fn(async (position: Vec3) => {
       fake.position = position;
     }),
@@ -31,7 +35,7 @@ function makeFakeSceneManager(
     getCollisionCircles: () => circles,
     getCollisionRects: () => rects,
   };
-  return fake as unknown as SceneManager & { position: Vec3 | null; animationSpeed: number };
+  return fake as unknown as SceneManager & { position: Vec3 | null; animationSpeed: number; animation: string | null };
 }
 
 describe("ZombieSystem", () => {
@@ -120,5 +124,62 @@ describe("ZombieSystem", () => {
     expect(zombie.isActive()).toBe(false);
     expect(scene.position).toBeNull();
     expect(zombie.update(0.1, new THREE.Vector3(), ZOMBIE_APPEARS_AT_SHIFT)).toBe(Infinity);
+  });
+
+  it("stops and plays the attack clip when the player is in reach, walks again once they back off", () => {
+    const scene = makeFakeSceneManager();
+    const zombie = new ZombieSystem(scene);
+    scene.position = { x: -0.8, y: 0, z: 0 };
+    (zombie as unknown as { active: boolean }).active = true;
+    const player = new THREE.Vector3(0, 1.6, 0);
+
+    zombie.update(0.1, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.animation).toBe("attack");
+    expect(scene.position!.x).toBe(-0.8);
+
+    // Чуть дальше ATTACK_RANGE — всё ещё бьёт (гистерезис, без дёрганья клипов).
+    scene.position = { x: -1.3, y: 0, z: 0 };
+    zombie.update(0.1, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.animation).toBe("attack");
+
+    scene.position = { x: -3, y: 0, z: 0 };
+    zombie.update(0.1, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.animation).toBe("walk");
+    expect(scene.position!.x).toBeGreaterThan(-3);
+  });
+
+  it("kill() plays the death clip, then the zombie neither moves nor reports a distance", () => {
+    const scene = makeFakeSceneManager();
+    const zombie = new ZombieSystem(scene);
+    scene.position = { x: -5, y: 0, z: 0 };
+    (zombie as unknown as { active: boolean }).active = true;
+
+    zombie.kill();
+    expect(zombie.isDead()).toBe(true);
+    expect(scene.animation).toBe("death");
+    expect(zombie.update(0.1, new THREE.Vector3(0, 1.6, 0), ZOMBIE_APPEARS_AT_SHIFT)).toBe(Infinity);
+    expect(scene.position!.x).toBe(-5);
+  });
+
+  it("a zombie spawned after a kill chases again", async () => {
+    const scene = makeFakeSceneManager();
+    const zombie = new ZombieSystem(scene);
+    await zombie.activate(new THREE.Vector3(0, 1.6, 0));
+    zombie.kill();
+    zombie.deactivate();
+
+    await zombie.activate(new THREE.Vector3(0, 1.6, 0));
+    expect(zombie.isDead()).toBe(false);
+    expect(zombie.update(0.1, new THREE.Vector3(0, 1.6, 0), ZOMBIE_APPEARS_AT_SHIFT)).toBeLessThan(Infinity);
+  });
+
+  it("moves along Z as well as X (player straight ahead on the Z axis)", () => {
+    const scene = makeFakeSceneManager();
+    const zombie = new ZombieSystem(scene);
+    scene.position = { x: 0, y: 0, z: -10 };
+    (zombie as unknown as { active: boolean }).active = true;
+
+    zombie.update(0.5, new THREE.Vector3(0, 1.6, 0), ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.position!.z).toBeGreaterThan(-10);
   });
 });

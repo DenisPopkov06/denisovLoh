@@ -15,6 +15,9 @@ const ZOMBIE_RADIUS = 0.35;
 // "Слишком близко" — чуть больше суммы радиусов игрока и зомби (PLAYER_RADIUS=0.35
 // в PlayerController), чтобы урон начинался от физического контакта, а не впритык.
 const ATTACK_RANGE = 1.1;
+// Выход из удара — с запасом (гистерезис): иначе на самой границе ATTACK_RANGE
+// клипы удара/ходьбы дёргались бы туда-обратно каждый кадр.
+const ATTACK_EXIT_RANGE = ATTACK_RANGE + 0.35;
 const DAMAGE_PER_SECOND = 22;
 // Высоты лучей коллизии (см. ZombieSystem.isBlocked) — аналог двух уровней
 // PlayerController (глаза/низкий), но от роста зомби (~1.75м, см. SESSION_SUMMARY.md),
@@ -58,8 +61,11 @@ function isPositionBlocked(
  *  по кратчайшему пути в плоскости XZ, обходя ту же коллизию, что и игрок (надгробия,
  *  ограда, статическая геометрия зоны), не проходит сквозь объекты, разгоняется со
  *  сменами и отнимает жизни игрока (HealthSystem), если подойти слишком близко. */
+type ZombieState = "chase" | "attack" | "dead";
+
 export class ZombieSystem {
   private active = false;
+  private state: ZombieState = "chase";
   private readonly tmpDirection = new THREE.Vector3();
   private readonly tmpStep = new THREE.Vector3();
   private readonly tmpNextPos = new THREE.Vector3();
@@ -80,6 +86,7 @@ export class ZombieSystem {
     const spawn = this.findSpawnPosition(playerPosition);
     await this.sceneManager.spawnZombie(spawn);
     this.active = true;
+    this.state = "chase";
   }
 
   /** Игрок проиграл смену — зомби исчезает (следующая смена снова 1-я, до
@@ -88,11 +95,25 @@ export class ZombieSystem {
     if (!this.active) return;
     this.sceneManager.removeZombie();
     this.active = false;
+    this.state = "chase";
+  }
+
+  /** Зомби убит: проигрывает падение и остаётся лежать — больше не ходит и не бьёт
+   *  (update() возвращает Infinity). Убрать тело — deactivate(). */
+  kill(): void {
+    if (!this.active || this.state === "dead") return;
+    this.state = "dead";
+    this.sceneManager.playZombieAnimation("death");
+  }
+
+  isDead(): boolean {
+    return this.state === "dead";
   }
 
   /** Двигает зомби к игроку на один кадр и возвращает дистанцию XZ до него (Infinity,
-   *  если зомби не активен) — Game.update() сравнивает её с ATTACK_RANGE сам, чтобы
-   *  не плодить циклическую зависимость с HealthSystem здесь. */
+   *  если зомби не активен или убит) — Game.update() сравнивает её с ATTACK_RANGE сам,
+   *  чтобы не плодить циклическую зависимость с HealthSystem здесь. Вплотную к игроку
+   *  зомби останавливается и бьёт (клип attack), отошёл — снова идёт (walk). */
   update(
     deltaSec: number,
     playerPosition: THREE.Vector3,
@@ -102,7 +123,7 @@ export class ZombieSystem {
     collisionMeshes: readonly THREE.Object3D[] = EMPTY_MESHES,
     raycastExcluded: ReadonlySet<THREE.Object3D> = EMPTY_EXCLUDED,
   ): number {
-    if (!this.active) return Infinity;
+    if (!this.active || this.state === "dead") return Infinity;
     const zombie = this.sceneManager.getZombiePosition();
     if (!zombie) return Infinity;
 
@@ -110,7 +131,19 @@ export class ZombieSystem {
     const distance = this.tmpDirection.length();
     if (distance < 1e-4) return distance;
     this.tmpDirection.normalize();
+    const yaw = Math.atan2(this.tmpDirection.x, this.tmpDirection.z);
 
+    if (this.state === "chase" && distance <= ATTACK_RANGE) this.state = "attack";
+    else if (this.state === "attack" && distance > ATTACK_EXIT_RANGE) this.state = "chase";
+
+    if (this.state === "attack") {
+      // Стоит на месте и бьёт, всё время развернувшись к игроку.
+      this.sceneManager.playZombieAnimation("attack");
+      this.sceneManager.setZombiePose(zombie, yaw);
+      return distance;
+    }
+
+    this.sceneManager.playZombieAnimation("walk");
     const speed = this.speedForShift(shiftIndex);
     this.sceneManager.setZombieAnimationSpeed(speed / BASE_SPEED);
 
@@ -124,7 +157,6 @@ export class ZombieSystem {
       raycastExcluded,
     );
 
-    const yaw = Math.atan2(this.tmpDirection.x, this.tmpDirection.z);
     this.sceneManager.setZombiePose(next, yaw);
     return distance;
   }
@@ -178,12 +210,17 @@ export class ZombieSystem {
     raycastExcluded: ReadonlySet<THREE.Object3D>,
   ): Vec3 {
     const next = { x: from.x, y: from.y, z: from.z };
+    // step может быть тем же this.tmpStep, который ниже переиспользуется под шаг по
+    // одной оси, — компоненты нужно запомнить до этого, иначе Z обнулялся раньше,
+    // чем его успевали применить, и зомби ходил только вдоль X.
+    const stepX = step.x;
+    const stepZ = step.z;
 
-    this.tmpStep.set(step.x, 0, 0);
-    if (!this.isBlocked(next, this.tmpStep, circles, rects, meshes, raycastExcluded)) next.x += step.x;
+    this.tmpStep.set(stepX, 0, 0);
+    if (!this.isBlocked(next, this.tmpStep, circles, rects, meshes, raycastExcluded)) next.x += stepX;
 
-    this.tmpStep.set(0, 0, step.z);
-    if (!this.isBlocked(next, this.tmpStep, circles, rects, meshes, raycastExcluded)) next.z += step.z;
+    this.tmpStep.set(0, 0, stepZ);
+    if (!this.isBlocked(next, this.tmpStep, circles, rects, meshes, raycastExcluded)) next.z += stepZ;
 
     return next;
   }
