@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Vec3 } from "@/data/types";
 import type { SceneManager, CollisionCircle, CollisionRect } from "@/core/SceneManager";
 import { ZOMBIE_APPEARS_AT_SHIFT } from "@/systems/DifficultyScaler";
+import { GridPathfinder, type Point2 } from "@/systems/ZombiePathfinder";
 
 // Игрок ходит со скоростью 3 м/с (PlayerController.moveSpeed) и может спринтовать
 // (×1.6 = 4.8 м/с) — зомби на старте заметно медленнее, чтобы от него можно было
@@ -29,6 +30,17 @@ const LOW_RAY_HEIGHT = 0.5;
 // забор) — см. findSpawnPosition.
 const SPAWN_DISTANCE = 10;
 const SPAWN_ATTEMPTS = 12;
+// Поиск пути (GridPathfinder): клетка сетки, сколько клеток максимум обходить за
+// один поиск, как часто пересчитывать путь и насколько игрок должен сместиться,
+// чтобы пересчитать сразу, не дожидаясь таймера.
+const PATH_CELL = 0.5;
+const PATH_MAX_EXPANSIONS = 5000;
+const REPLAN_SEC = 0.6;
+const REPLAN_PLAYER_MOVED = 1.2;
+const WAYPOINT_REACHED = 0.3;
+// Почти не сдвинулся за STUCK_SEC при попытке идти — путь устарел (надгробия
+// перемешались, упёрся в угол), пересчитываем немедленно.
+const STUCK_SEC = 0.6;
 const EMPTY_CIRCLES: readonly CollisionCircle[] = [];
 const EMPTY_RECTS: readonly CollisionRect[] = [];
 const EMPTY_MESHES: readonly THREE.Object3D[] = [];
@@ -57,12 +69,12 @@ function isPositionBlocked(
   return false;
 }
 
-/** Зомби (моб-преследователь, появляется с ZOMBIE_APPEARS_AT_SHIFT): идёт к игроку
- *  по кратчайшему пути в плоскости XZ, обходя ту же коллизию, что и игрок (надгробия,
- *  ограда, статическая геометрия зоны), не проходит сквозь объекты, разгоняется со
- *  сменами и отнимает жизни игрока (HealthSystem), если подойти слишком близко. */
 type ZombieState = "chase" | "attack" | "dead";
 
+/** Зомби (моб-преследователь, появляется с ZOMBIE_APPEARS_AT_SHIFT): идёт к игроку,
+ *  обходя ту же коллизию, что и игрок (надгробия, ограда, статическая геометрия зоны),
+ *  — если прямая дорога перекрыта, ищет путь в обход (GridPathfinder). Разгоняется со
+ *  сменами и отнимает жизни игрока (HealthSystem), если подойти слишком близко. */
 export class ZombieSystem {
   private active = false;
   private state: ZombieState = "chase";
@@ -72,6 +84,18 @@ export class ZombieSystem {
   private readonly tmpPerp = new THREE.Vector3();
   private readonly tmpRayOrigin = new THREE.Vector3();
   private readonly raycaster = new THREE.Raycaster();
+  private readonly tmpMoveDir = new THREE.Vector3();
+  private readonly tmpAxis = new THREE.Vector3();
+
+  private readonly pathfinder = new GridPathfinder(PATH_CELL, PATH_MAX_EXPANSIONS);
+  private path: Point2[] = [];
+  private replanTimer = 0;
+  private lastGoal: Point2 | null = null;
+  private stuckTimer = 0;
+  /** Занятость клетки статической геометрией (лучи) — она не двигается, поэтому
+   *  считается один раз на клетку; круги/ограда проверяются каждый раз заново
+   *  (надгробия перемешиваются каждую смену). */
+  private readonly meshBlockedCache = new Map<string, boolean>();
 
   constructor(private readonly sceneManager: SceneManager) {}
 
@@ -87,6 +111,7 @@ export class ZombieSystem {
     await this.sceneManager.spawnZombie(spawn);
     this.active = true;
     this.state = "chase";
+    this.resetPath();
   }
 
   /** Игрок проиграл смену — зомби исчезает (следующая смена снова 1-я, до
@@ -96,6 +121,8 @@ export class ZombieSystem {
     this.sceneManager.removeZombie();
     this.active = false;
     this.state = "chase";
+    this.resetPath();
+    this.meshBlockedCache.clear();
   }
 
   /** Зомби убит: проигрывает падение и остаётся лежать — больше не ходит и не бьёт
@@ -147,7 +174,15 @@ export class ZombieSystem {
     const speed = this.speedForShift(shiftIndex);
     this.sceneManager.setZombieAnimationSpeed(speed / BASE_SPEED);
 
-    this.tmpStep.copy(this.tmpDirection).multiplyScalar(speed * deltaSec);
+    const isBlocked = (x: number, z: number): boolean =>
+      isPositionBlocked(x, z, ZOMBIE_RADIUS, collisionCircles, collisionRects) ||
+      this.isMeshBlockedAt(x, z, zombie.y, collisionMeshes, raycastExcluded);
+    const target = this.nextWaypoint(deltaSec, zombie, playerPosition, isBlocked);
+    this.tmpMoveDir.set(target.x - zombie.x, 0, target.z - zombie.z);
+    if (this.tmpMoveDir.lengthSq() < 1e-8) this.tmpMoveDir.copy(this.tmpDirection);
+    this.tmpMoveDir.normalize();
+
+    this.tmpStep.copy(this.tmpMoveDir).multiplyScalar(speed * deltaSec);
     const next = this.moveWithCollision(
       zombie,
       this.tmpStep,
@@ -157,8 +192,89 @@ export class ZombieSystem {
       raycastExcluded,
     );
 
-    this.sceneManager.setZombiePose(next, yaw);
+    const moved = Math.hypot(next.x - zombie.x, next.z - zombie.z);
+    this.stuckTimer = moved < speed * deltaSec * 0.25 ? this.stuckTimer + deltaSec : 0;
+    if (this.stuckTimer >= STUCK_SEC) {
+      this.stuckTimer = 0;
+      this.path = [];
+      this.replanTimer = 0;
+    }
+
+    this.sceneManager.setZombiePose(next, Math.atan2(this.tmpMoveDir.x, this.tmpMoveDir.z));
     return distance;
+  }
+
+  /** Куда идти в этом кадре: прямо к игроку, если дорога свободна, иначе — к
+   *  следующей точке найденного обходного пути (пересчитывается по таймеру, когда
+   *  игрок заметно сместился, или если зомби застрял). Пути нет совсем (игрок
+   *  недостижим) — идёт напрямую, как раньше. */
+  private nextWaypoint(
+    deltaSec: number,
+    zombie: Vec3,
+    player: THREE.Vector3,
+    isBlocked: (x: number, z: number) => boolean,
+  ): Point2 {
+    const from = { x: zombie.x, z: zombie.z };
+    const goal = { x: player.x, z: player.z };
+    this.replanTimer -= deltaSec;
+    const goalMoved =
+      !this.lastGoal || Math.hypot(goal.x - this.lastGoal.x, goal.z - this.lastGoal.z) > REPLAN_PLAYER_MOVED;
+    if (this.replanTimer <= 0 || goalMoved || this.path.length === 0) {
+      this.replanTimer = REPLAN_SEC;
+      this.lastGoal = goal;
+      this.path = this.pathfinder.isSegmentClear(from, goal, isBlocked)
+        ? [goal]
+        : (this.pathfinder.findPath(from, goal, isBlocked) ?? [goal]);
+    }
+    // Последняя точка пути — сам игрок: держим её актуальной между пересчётами.
+    this.path[this.path.length - 1] = goal;
+    while (this.path.length > 1 && Math.hypot(this.path[0].x - from.x, this.path[0].z - from.z) < WAYPOINT_REACHED) {
+      this.path.shift();
+    }
+    return this.path[0] ?? goal;
+  }
+
+  private isMeshBlockedAt(
+    x: number,
+    z: number,
+    groundY: number,
+    meshes: readonly THREE.Object3D[],
+    raycastExcluded: ReadonlySet<THREE.Object3D>,
+  ): boolean {
+    if (meshes.length === 0) return false;
+    const key = `${x.toFixed(2)},${z.toFixed(2)}`;
+    const cached = this.meshBlockedCache.get(key);
+    if (cached !== undefined) return cached;
+
+    // Два луча крест-накрест через клетку (вдоль X и вдоль Z) длиной в диаметр
+    // зомби, на тех же двух высотах, что и при движении (isBlocked).
+    let blocked = false;
+    this.raycaster.far = ZOMBIE_RADIUS * 2;
+    for (const height of [HIGH_RAY_HEIGHT, LOW_RAY_HEIGHT]) {
+      for (const [ax, az] of [
+        [1, 0],
+        [0, 1],
+      ] as const) {
+        this.tmpAxis.set(ax, 0, az);
+        this.tmpRayOrigin.set(x - ax * ZOMBIE_RADIUS, groundY + height, z - az * ZOMBIE_RADIUS);
+        this.raycaster.set(this.tmpRayOrigin, this.tmpAxis);
+        const hits = this.raycaster.intersectObjects(meshes as THREE.Object3D[], true);
+        if (hits.some((hit) => !raycastExcluded.has(hit.object))) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) break;
+    }
+    this.meshBlockedCache.set(key, blocked);
+    return blocked;
+  }
+
+  private resetPath(): void {
+    this.path = [];
+    this.replanTimer = 0;
+    this.lastGoal = null;
+    this.stuckTimer = 0;
   }
 
   isWithinAttackRange(distance: number): boolean {

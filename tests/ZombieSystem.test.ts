@@ -182,4 +182,20 @@ describe("ZombieSystem", () => {
     zombie.update(0.5, new THREE.Vector3(0, 1.6, 0), ZOMBIE_APPEARS_AT_SHIFT);
     expect(scene.position!.z).toBeGreaterThan(-10);
   });
+
+  it("walks around a long fence to reach a player standing behind it", () => {
+    // Ограда между зомби и игроком, проход только справа (x > 2).
+    const fence: CollisionRect = { minX: -6, maxX: 2, minZ: -0.1, maxZ: 0.1 };
+    const scene = makeFakeSceneManager([], [fence]);
+    const zombie = new ZombieSystem(scene);
+    scene.position = { x: 0, y: 0, z: -4 };
+    (zombie as unknown as { active: boolean }).active = true;
+    const player = new THREE.Vector3(0, 1.6, 4);
+
+    let distance = Infinity;
+    for (let i = 0; i < 400 && distance > 1.1; i++) {
+      distance = zombie.update(0.05, player, ZOMBIE_APPEARS_AT_SHIFT);
+    }
+    expect(distance).toBeLessThanOrEqual(1.1);
+  });
 });
