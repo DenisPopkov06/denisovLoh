@@ -5,6 +5,8 @@ export class FlashlightSystem {
   private readonly target = new THREE.Object3D();
   private chargePercent = 100;
   private on = false;
+  /** Навык "Фонарь": во сколько раз дольше держится заряд (расход делится на него). */
+  private durationMultiplier = 1;
 
   constructor(
     private readonly drainPerSecond = 2,
@@ -21,6 +23,10 @@ export class FlashlightSystem {
     this.light.shadow.camera.near = 0.5;
     this.light.shadow.camera.far = 25;
     this.light.shadow.bias = -0.003;
+  }
+
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier = Math.max(0.01, multiplier);
   }
 
   /** Привязывает фонарик к камере игрока: конус светит туда, куда смотрит камера. */
@@ -40,7 +46,7 @@ export class FlashlightSystem {
    *  экономии, т.к. вдвое медленнее расхода). */
   update(deltaSec: number): void {
     if (this.on) {
-      this.chargePercent = Math.max(0, this.chargePercent - this.drainPerSecond * deltaSec);
+      this.chargePercent = Math.max(0, this.chargePercent - (this.drainPerSecond / this.durationMultiplier) * deltaSec);
       if (this.chargePercent === 0) {
         this.on = false;
         this.light.visible = false;

@@ -42,6 +42,14 @@
   color: var(--nk-text);
 }
 
+/* Монеты за смену (ShiftReportScreen, бэкенд) — под очками, золотым цветом монеты. */
+.shift-report__coins {
+  margin: -0.2em 0 0.6em;
+  font-size: clamp(16px, 2.9vmin, 21px);
+  color: #f2b544;
+  font-variant-numeric: tabular-nums;
+}
+
 .shift-report__score {
   margin: 0.9em 0 0.6em;
   font-size: clamp(24px, 5vmin, 36px);

@@ -40,6 +40,8 @@ export class InteractionSystem {
 
   private repairingInstanceId: string | null = null;
   private repairRemainingSec = 0;
+  /** Навык "Взлом": во сколько раз быстрее идут действия с удержанием E. */
+  private workSpeedMultiplier = 1;
 
   private carriedObject: THREE.Object3D | null = null;
   private carriedInstanceId: string | null = null;
@@ -50,6 +52,10 @@ export class InteractionSystem {
     private readonly shiftManager: ShiftManager,
     private readonly sceneManager: SceneManager,
   ) {}
+
+  setWorkSpeedMultiplier(multiplier: number): void {
+    this.workSpeedMultiplier = Math.max(0.01, multiplier);
+  }
 
   /** holdingInteract — зажата ли клавиша взаимодействия (для таймера ремонта BROKEN). */
   update(interactables: THREE.Object3D[], holdingInteract: boolean, deltaSec: number): void {
@@ -74,7 +80,7 @@ export class InteractionSystem {
     if (this.repairingInstanceId) {
       const stillFocused = this.focusedRoot?.userData.instanceId === this.repairingInstanceId;
       if (holdingInteract && stillFocused) {
-        this.repairRemainingSec -= deltaSec;
+        this.repairRemainingSec -= deltaSec * this.workSpeedMultiplier;
         if (this.repairRemainingSec <= 0) this.completeRepair();
       } else {
         this.cancelRepair();

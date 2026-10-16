@@ -11,6 +11,8 @@ export class ShiftManager {
   constructor(
     private readonly stateMachine: ObjectStateMachine,
     private readonly onShiftEnd: (reason: ShiftEndReason) => void = () => {},
+    /** Каждая выполненная задача текущей смены — для награды монетами (Game). */
+    private readonly onTaskCompleted: (instanceId: string) => void = () => {},
   ) {
     this.stateMachine.onChange((instanceId, state) => this.handleStateChange(instanceId, state));
   }
@@ -78,6 +80,7 @@ export class ShiftManager {
     if (!isTrackedTask || this.completedTaskIds.has(instanceId)) return;
 
     this.completedTaskIds.add(instanceId);
+    this.onTaskCompleted(instanceId);
     if (this.isShiftComplete()) this.endShift("all_tasks_done");
   }
 
