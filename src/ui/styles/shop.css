@@ -1,11 +1,23 @@
 /* Магазин у дома смотрителя (ShopScreen): «Прокачка» слева, «Магазин» справа.
-   Разметку создаёт src/ui/ShopScreen.ts. Палитра — общие токены из base.css. */
+   Разметку создаёт src/ui/ShopScreen.ts. Вид — по референсу: сквозь лёгкое
+   затемнение видна ночная сцена, панели — потёртые тёмные каменные плиты. */
 
 .shop {
-  --shop-panel: linear-gradient(180deg, rgba(16, 23, 40, 0.95), rgba(9, 14, 27, 0.95));
-  --shop-card: rgba(255, 255, 255, 0.035);
-  --shop-card-border: rgba(120, 140, 180, 0.22);
-  --shop-coin: #f2b544;
+  --shop-font: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --shop-text: #e6e8ec;
+  --shop-title: #c3c7cf;
+  --shop-muted: #9aa1ad;
+  --shop-card: rgba(12, 16, 25, 0.78);
+  --shop-card-border: rgba(118, 128, 150, 0.28);
+  --shop-btn: #3c414b;
+  --shop-btn-hover: #4d5361;
+  --shop-seg: #a9bb6c;
+  --shop-seg-off: rgba(255, 255, 255, 0.07);
+  --shop-tab-active: #5a628a;
+  --shop-coin: #e3a43c;
+  /* Зерно и пятна «камня»: SVG feTurbulence, без внешних файлов. */
+  --shop-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.6  0 0 0 0 0.7  0 0 0 0.18 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --shop-stains: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='4' seed='7'/><feColorMatrix values='0 0 0 0 0.02  0 0 0 0 0.03  0 0 0 0 0.05  0 0 0 1.4 -0.55'/></filter><rect width='100%' height='100%' filter='url(%23s)'/></svg>");
 
   pointer-events: auto;
   position: absolute;
@@ -13,9 +25,16 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--nk-pad)) calc(env(safe-area-inset-right, 0px) + var(--nk-pad))
-    calc(env(safe-area-inset-bottom, 0px) + var(--nk-pad)) calc(env(safe-area-inset-left, 0px) + var(--nk-pad));
-  background: radial-gradient(ellipse at 50% 40%, rgba(4, 8, 18, 0.45), rgba(2, 4, 10, 0.82));
+  padding: calc(env(safe-area-inset-top, 0px) + clamp(10px, 2.4vmin, 22px))
+    calc(env(safe-area-inset-right, 0px) + var(--nk-pad))
+    calc(env(safe-area-inset-bottom, 0px) + clamp(10px, 2.4vmin, 22px))
+    calc(env(safe-area-inset-left, 0px) + var(--nk-pad));
+  font-family: var(--shop-font);
+  color: var(--shop-text);
+  /* Сцена остаётся видна: лёгкое общее затемнение + виньетка по краям. */
+  background:
+    radial-gradient(ellipse 75% 70% at 50% 45%, rgba(3, 6, 14, 0.05), rgba(3, 6, 14, 0.55)),
+    linear-gradient(180deg, rgba(3, 6, 14, 0.25), rgba(3, 6, 14, 0.1) 30%, rgba(3, 6, 14, 0.35));
   overflow-y: auto;
   animation: shop-fade 0.18s ease-out;
 }
@@ -26,83 +45,127 @@
   }
 }
 
-/* --- «Назад» --- */
+/* --- «Назад»: просто текст со стрелкой, как на референсе --- */
 .shop__back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 0.35em;
-  min-height: 40px;
-  padding: 0.3em 1em 0.3em 0.6em;
+  gap: 0.3em;
+  min-height: 36px;
+  padding: 0.2em 0.6em 0.2em 0.2em;
   font: inherit;
-  font-size: clamp(13px, 2.2vmin, 16px);
-  letter-spacing: 0.12em;
+  font-size: clamp(13px, 2.1vmin, 16px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--nk-text);
-  background: var(--nk-bg);
-  border: 1px solid var(--nk-border);
-  border-radius: 10px;
+  color: var(--shop-text);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  background: none;
+  border: none;
   cursor: pointer;
 }
 
 .shop__back:hover,
 .shop__back:focus-visible {
-  border-color: var(--nk-accent);
-  box-shadow: 0 0 12px var(--nk-accent-glow);
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
   outline: none;
 }
 
 .shop__back-icon {
-  width: 1.2em;
-  height: 1.2em;
+  width: 1.3em;
+  height: 1.3em;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.2;
+  stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-/* --- панели --- */
+/* --- раскладка: прокачка | (магазин + подсказка) --- */
+/* Панели не на весь экран: сверху и по бокам остаётся видна сцена, как на референсе. */
 .shop__panels {
-  flex: 1;
+  flex: 0 1 auto;
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
-  gap: clamp(12px, 2.4vmin, 26px);
-  width: min(100%, 1180px);
-  margin: clamp(8px, 1.6vmin, 16px) auto 0;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
+  gap: clamp(10px, 1.8vmin, 18px);
+  width: min(100%, 1060px, 86vw);
+  height: min(100%, 680px, 84vh);
+  margin: clamp(4px, 3vh, 40px) auto auto;
   min-height: 0;
+}
+
+.shop__column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Плита: тёмный камень с зерном и пятнами, сколотые края, светлый кант. */
+.shop__panel,
+.shop__tip {
+  position: relative;
+  box-sizing: border-box;
+  background:
+    var(--shop-stains),
+    var(--shop-grain),
+    linear-gradient(180deg, rgba(30, 35, 47, 0.96), rgba(17, 21, 31, 0.96));
+  clip-path: polygon(
+    0 6px,
+    7px 0,
+    38% 0,
+    calc(38% + 6px) 3px,
+    calc(100% - 12px) 0,
+    100% 9px,
+    100% 55%,
+    calc(100% - 3px) calc(55% + 7px),
+    100% calc(55% + 14px),
+    100% calc(100% - 7px),
+    calc(100% - 9px) 100%,
+    62% 100%,
+    calc(62% - 5px) calc(100% - 3px),
+    10px 100%,
+    0 calc(100% - 11px),
+    0 40%,
+    3px calc(40% + 6px),
+    0 calc(40% + 12px)
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(150, 160, 185, 0.2),
+    inset 0 2px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 40px rgba(0, 0, 0, 0.55);
 }
 
 .shop__panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  box-sizing: border-box;
-  padding: clamp(12px, 2.4vmin, 22px);
-  background: var(--shop-panel);
-  border: 1px solid var(--nk-border);
-  border-radius: 14px;
-  box-shadow:
-    0 18px 60px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 0 clamp(10px, 1.9vmin, 18px) clamp(10px, 1.9vmin, 18px);
 }
 
+.shop__panel--store {
+  flex: 1;
+}
+
+/* Шапка — отдельная тёмная полоса плиты. */
 .shop__header {
   display: flex;
   align-items: center;
-  gap: 0.8em;
-  padding-bottom: 0.8em;
-  margin-bottom: 0.9em;
-  border-bottom: 1px solid var(--shop-card-border);
+  gap: clamp(10px, 2vmin, 18px);
+  margin: 0 calc(-1 * clamp(10px, 1.9vmin, 18px)) clamp(10px, 1.8vmin, 16px);
+  padding: clamp(10px, 2vmin, 16px) clamp(12px, 2.2vmin, 20px);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.3));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 0 rgba(150, 160, 185, 0.14);
 }
 
 .shop__header-icon {
   flex: none;
   display: grid;
   place-items: center;
-  width: clamp(34px, 6vmin, 46px);
-  height: clamp(34px, 6vmin, 46px);
-  color: var(--nk-text);
+  width: clamp(30px, 5.6vmin, 44px);
+  height: clamp(30px, 5.6vmin, 44px);
+  color: #b9bdc5;
 }
 
 .shop__header-text {
@@ -112,16 +175,19 @@
 
 .shop__title {
   margin: 0;
-  font-size: clamp(20px, 4.2vmin, 32px);
-  font-weight: normal;
-  letter-spacing: 0.12em;
+  font-size: clamp(20px, 4.4vmin, 34px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--shop-title);
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.7);
 }
 
 .shop__subtitle {
-  margin: 0.15em 0 0;
-  font-size: clamp(11px, 2vmin, 14px);
-  color: var(--nk-muted);
+  margin: 0.25em 0 0;
+  font-size: clamp(11px, 1.9vmin, 14px);
+  color: var(--shop-muted);
 }
 
 .shop__svg {
@@ -129,9 +195,25 @@
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.shop__svg .f {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* «Вырезы» в залитых иконках (крест на сердце, $ на мешке) — цветом подложки. */
+.shop__svg .cut {
+  stroke: #10141d;
+  stroke-width: 2;
+}
+
+.shop__svg .glow {
+  fill: #ffcf6e;
+  stroke: none;
 }
 
 /* --- монеты --- */
@@ -141,38 +223,41 @@
   width: 1.05em;
   height: 1.05em;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe08a, var(--shop-coin) 55%, #a8721c);
+  background: radial-gradient(circle at 35% 30%, #ffe3a0, var(--shop-coin) 55%, #8f5f16);
   box-shadow:
-    inset 0 0 0 0.12em rgba(120, 75, 10, 0.55),
-    0 0 6px rgba(242, 181, 68, 0.35);
+    inset 0 0 0 0.11em rgba(110, 70, 10, 0.6),
+    0 0 4px rgba(227, 164, 60, 0.3);
 }
 
 .shop__price,
 .shop__balance {
   display: inline-flex;
   align-items: center;
-  gap: 0.4em;
+  gap: 0.45em;
   font-variant-numeric: tabular-nums;
 }
 
 .shop__balance {
   flex: none;
-  padding: 0.35em 0.9em;
-  font-size: clamp(15px, 2.8vmin, 20px);
-  background: rgba(0, 0, 0, 0.35);
+  align-self: flex-start;
+  padding: 0.4em 1em;
+  font-size: clamp(14px, 2.5vmin, 18px);
+  background: rgba(5, 8, 13, 0.75);
   border: 1px solid var(--shop-card-border);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 /* --- навыки --- */
 .shop__skills {
   display: flex;
   flex-direction: column;
-  gap: clamp(6px, 1.2vmin, 10px);
+  gap: clamp(5px, 1vmin, 9px);
   margin: 0;
   padding: 0;
   list-style: none;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(150, 160, 185, 0.35) transparent;
 }
 
 .shop__skill {
@@ -180,23 +265,24 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: clamp(8px, 1.6vmin, 14px);
-  padding: clamp(7px, 1.4vmin, 11px);
+  padding: clamp(5px, 1vmin, 8px) clamp(6px, 1.2vmin, 9px);
   background: var(--shop-card);
   border: 1px solid var(--shop-card-border);
-  border-radius: 10px;
+  border-radius: 7px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .shop__skill-icon {
   display: grid;
   place-items: center;
-  width: clamp(38px, 7vmin, 54px);
-  height: clamp(38px, 7vmin, 54px);
-  padding: 0.35em;
+  width: clamp(38px, 6.4vmin, 54px);
+  height: clamp(38px, 6.4vmin, 54px);
+  padding: 0.4em;
   box-sizing: border-box;
-  color: var(--nk-text);
-  background: rgba(0, 0, 0, 0.35);
+  color: #b4b8c0;
+  background: rgba(4, 6, 11, 0.6);
   border: 1px solid var(--shop-card-border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .shop__skill-top {
@@ -208,142 +294,223 @@
 }
 
 .shop__skill-name {
-  font-size: clamp(13px, 2.4vmin, 18px);
-  font-weight: bold;
-  letter-spacing: 0.03em;
+  font-size: clamp(12px, 2vmin, 16px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
+  color: var(--shop-text);
 }
 
 .shop__skill-level {
   flex: none;
-  font-size: clamp(11px, 1.9vmin, 13px);
-  color: var(--nk-muted);
+  font-size: clamp(10px, 1.7vmin, 12px);
+  color: var(--shop-muted);
 }
 
 .shop__skill-desc {
-  margin: 0.15em 0 0.4em;
-  font-size: clamp(11px, 1.9vmin, 13px);
-  color: var(--nk-muted);
+  margin: 0.15em 0 0.45em;
+  font-size: clamp(10px, 1.5vmin, 12px);
+  color: var(--shop-muted);
 }
 
 .shop__skill-progress {
   display: flex;
-  gap: 4px;
+  gap: 3px;
 }
 
 .shop__seg {
   flex: 1;
-  max-width: 34px;
-  height: 6px;
+  max-width: 64px;
+  height: clamp(5px, 0.9vmin, 7px);
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--shop-seg-off);
 }
 
 .shop__seg--on {
-  background: var(--nk-ok);
-  box-shadow: 0 0 6px rgba(143, 196, 107, 0.5);
+  background: linear-gradient(180deg, #c3d483, var(--shop-seg) 50%, #8a9c52);
+  box-shadow: 0 0 4px rgba(169, 187, 108, 0.35);
 }
 
+/* Цена + кнопка в одной рамке справа. */
 .shop__skill-buy {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.35em;
-  min-width: clamp(84px, 14vmin, 112px);
+  min-width: clamp(74px, 11vmin, 96px);
+  padding: 0.35em;
+  background: rgba(4, 6, 11, 0.55);
+  border: 1px solid var(--shop-card-border);
+  border-radius: 6px;
 }
 
 .shop__skill-buy .shop__price {
   justify-content: center;
-  font-size: clamp(13px, 2.3vmin, 16px);
+  font-size: clamp(12px, 2.1vmin, 15px);
 }
 
 .shop__price--short {
-  color: var(--nk-danger);
+  color: #d9776a;
 }
 
 .shop__upgrade {
-  min-height: 34px;
+  min-height: 30px;
   padding: 0.3em 0.6em;
   font: inherit;
-  font-size: clamp(12px, 2vmin, 14px);
-  letter-spacing: 0.06em;
+  font-size: clamp(10px, 1.7vmin, 12px);
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--nk-text);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--nk-border);
-  border-radius: 8px;
+  color: #d4d7dd;
+  background: linear-gradient(180deg, #474c57, var(--shop-btn));
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background 0.15s ease;
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .shop__upgrade:not(:disabled):hover,
 .shop__upgrade:not(:disabled):focus-visible {
-  border-color: var(--nk-accent);
-  background: rgba(255, 181, 74, 0.12);
-  box-shadow: 0 0 12px var(--nk-accent-glow);
+  background: linear-gradient(180deg, #5a6070, var(--shop-btn-hover));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 8px rgba(169, 187, 108, 0.35);
   outline: none;
 }
 
 .shop__upgrade:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: default;
 }
 
-/* --- область предметов (пока пустая) --- */
+/* --- вкладки категорий --- */
+.shop__tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(4px, 0.8vmin, 8px);
+  margin-bottom: clamp(8px, 1.6vmin, 14px);
+}
+
+.shop__tab {
+  min-height: 32px;
+  padding: 0.4em 0.3em;
+  font: inherit;
+  font-size: clamp(10px, 1.7vmin, 12px);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--shop-muted);
+  background: rgba(5, 9, 15, 0.7);
+  border: 1px solid var(--shop-card-border);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop__tab--active {
+  color: #eef0f6;
+  background: linear-gradient(180deg, #6a73a0, var(--shop-tab-active));
+  border-color: rgba(160, 172, 220, 0.55);
+  box-shadow: 0 0 10px rgba(110, 120, 180, 0.35);
+}
+
+/* --- сетка предметов: пока пустые карточки-заготовки --- */
 .shop__items {
   position: relative;
   flex: 1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: minmax(90px, 1fr);
-  gap: clamp(8px, 1.6vmin, 14px);
+  grid-auto-rows: minmax(110px, 1fr);
+  gap: clamp(6px, 1.3vmin, 12px);
   min-height: 0;
 }
 
 .shop__item-slot {
-  border: 1px dashed var(--shop-card-border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: clamp(8px, 1.4vmin, 12px);
+  background: var(--shop-card);
+  border: 1px solid var(--shop-card-border);
+  border-radius: 7px;
+}
+
+.shop__item-ph {
+  display: block;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.shop__item-ph--image {
+  flex: 1;
+  min-height: 24px;
+  margin: 0 18%;
+  border-radius: 6px;
+}
+
+.shop__item-ph--name {
+  width: 55%;
+  height: 9px;
+}
+
+.shop__item-ph--line {
+  width: 80%;
+  height: 6px;
+}
+
+.shop__item-ph--buy {
+  align-self: flex-end;
+  width: 42%;
+  height: 18px;
+  border-radius: 4px;
 }
 
 .shop__items-empty {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   margin: 0;
-  font-size: clamp(13px, 2.4vmin, 17px);
-  letter-spacing: 0.06em;
-  color: var(--nk-muted);
+  padding: 0.55em 1.2em;
+  font-size: clamp(12px, 2.1vmin, 15px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--shop-muted);
+  background: rgba(5, 8, 13, 0.85);
+  border: 1px solid var(--shop-card-border);
+  border-radius: 6px;
   pointer-events: none;
 }
 
+/* --- подсказка: отдельная плитка под магазином --- */
 .shop__tip {
+  align-self: center;
   display: flex;
   align-items: center;
-  gap: 0.8em;
-  margin-top: clamp(10px, 2vmin, 16px);
-  padding: 0.7em 1em;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--shop-card-border);
-  border-radius: 10px;
+  gap: 0.9em;
+  width: min(100%, 440px);
+  margin-top: clamp(8px, 1.6vmin, 14px);
+  padding: 0.75em 1.2em;
 }
 
 .shop__tip-icon {
   flex: none;
-  width: 1.8em;
-  height: 1.8em;
-  color: var(--nk-accent);
-  filter: drop-shadow(0 0 6px var(--nk-accent-glow));
+  width: 1.9em;
+  height: 1.9em;
+  color: #8a7a5a;
+  filter: drop-shadow(0 0 8px rgba(255, 181, 74, 0.45));
 }
 
 .shop__tip-text {
   margin: 0;
-  font-size: clamp(12px, 2vmin, 14px);
-  color: var(--nk-muted);
+  font-size: clamp(11px, 1.9vmin, 13px);
+  line-height: 1.35;
+  color: #c4c8cf;
 }
 
 /* --- кнопка входа в магазин у двери (видна и кликабельна на тач-экранах) --- */
@@ -370,12 +537,17 @@
   .shop__panels {
     flex: none;
     grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    height: auto;
+    margin-top: 4px;
   }
 
-  .shop__panel {
+  .shop__panel,
+  .shop__column {
     min-height: auto;
   }
 
+  .shop__panel--store,
   .shop__items {
     flex: none;
   }
@@ -386,7 +558,7 @@
 
   .shop__items {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: 80px;
+    grid-auto-rows: 110px;
   }
 }
 

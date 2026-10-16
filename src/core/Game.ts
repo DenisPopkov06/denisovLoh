@@ -29,6 +29,9 @@ import { createPostProcessing, type PostProcessingPipeline } from "@/render/Post
 const SPRINT_SPEED_MULTIPLIER = 1.6;
 // На каком расстоянии (по горизонтали) от двери дома смотрителя E открывает магазин.
 const SHOP_RADIUS = 2.8;
+// Пока открыт магазин, камера смотрит от двери на кладбище (фон как на референсе),
+// почти горизонтально — за панелями видны деревья, фонарь и небо. При закрытии возвращается прежний взгляд.
+const SHOP_VIEW_PITCH = 0.02;
 
 export class Game {
   private readonly renderer: THREE.WebGLRenderer;
@@ -65,6 +68,7 @@ export class Game {
   private coinsThisShift = 0;
   /** Дверь дома смотрителя (магазин) — ищется в зоне один раз, после загрузки. */
   private shopAnchor: { x: number; z: number } | null | undefined = undefined;
+  private readonly lookBeforeShop = { yaw: 0, pitch: 0 };
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -240,6 +244,15 @@ export class Game {
     if (this.shopScreen.isVisible() || this.pauseMenu.isVisible() || !this.canOpenShop()) return;
     this.shopScreen.show(this.buildShopState());
     this.hud.setHidden(true);
+    this.lookBeforeShop.yaw = this.camera.rotation.y;
+    this.lookBeforeShop.pitch = this.camera.rotation.x;
+    if (this.shopAnchor) {
+      // Камера Three.js смотрит вдоль -Z: yaw = atan2(-dx, -dz) для направления (dx, dz).
+      const dx = this.camera.position.x - this.shopAnchor.x;
+      const dz = this.camera.position.z - this.shopAnchor.z;
+      this.camera.rotation.y = Math.atan2(-dx, -dz);
+      this.camera.rotation.x = SHOP_VIEW_PITCH;
+    }
     this.clock.pause();
     this.input.exitPointerLock();
   }
@@ -248,6 +261,8 @@ export class Game {
     if (!this.shopScreen.isVisible()) return;
     this.shopScreen.hide();
     this.hud.setHidden(false);
+    this.camera.rotation.y = this.lookBeforeShop.yaw;
+    this.camera.rotation.x = this.lookBeforeShop.pitch;
     this.clock.resume();
     this.input.requestPointerLock();
   }

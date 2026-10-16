@@ -13,18 +13,19 @@ export interface ShopState {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** Контурные иконки 24×24 (stroke = currentColor) — как пиктограммы на референсе магазина. */
+/** Пиктограммы 24×24 — залитые серые силуэты, как на референсе магазина.
+ *  Класс "f" — заливка, остальное — толстая обводка (руки/ноги фигурок). */
 const ICONS: Record<string, string> = {
-  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
-  bag: '<path d="M9 3.5h6l-1.6 3.2h-2.8z"/><path d="M8.2 6.7h7.6c3 3 4.7 6 4.7 9a4.8 4.8 0 0 1-4.8 4.8H8.3a4.8 4.8 0 0 1-4.8-4.8c0-3 1.7-6 4.7-9z"/><path d="M12 10.5v7M14 12c-.3-.8-1-1.2-2-1.2s-2 .6-2 1.5 1 1.3 2 1.5 2 .6 2 1.5-1 1.5-2 1.5-1.7-.4-2-1.2"/>',
-  lantern: '<path d="M10 2.5h4M12 2.5v2M8.5 4.5h7l-1 2v9.5l1 2h-7l1-2V6.5z"/><path d="M12 9v4.5"/>',
+  star: '<path class="f" d="M12 2.2l2.95 6.1 6.7.95-4.85 4.7 1.15 6.65L12 17.45l-5.95 3.15 1.15-6.65L2.35 9.25l6.7-.95z"/>',
+  bag: '<path class="f" d="M8.6 2.6c1.2.7 2.2-.3 3.4-.3s2.2 1 3.4.3l-1.7 3.6h-3.4z"/><path class="f" d="M9.2 7.1h5.6c3.6 2.8 5.9 6.4 5.9 9.6 0 2.9-2 4.8-5 4.8H8.3c-3 0-5-1.9-5-4.8 0-3.2 2.3-6.8 5.9-9.6z"/><path class="cut" d="M12 10.6v8M14.1 12.1c-.4-.7-1.1-1-2.1-1-1.2 0-2 .6-2 1.5 0 2 4.2 1 4.2 3 0 .9-.9 1.6-2.2 1.6-1 0-1.8-.4-2.2-1.1"/>',
+  lantern: '<path class="f" d="M9.5 2.5h5v1.6h-5zM8 5h8l-1.2 2.2v9.6L16 19H8l1.2-2.2V7.2z"/><path class="f" d="M7.5 19.6h9v1.9h-9z"/><path class="glow" d="M12 9.2c1.3 1.4 1.6 2.6 1.6 3.6a1.6 1.6 0 0 1-3.2 0c0-1 .3-2.2 1.6-3.6z"/>',
   back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
-  run: '<circle cx="14.5" cy="4.2" r="1.9"/><path d="M8 21l2.6-5.6 3 2.4V22M5.5 11.5l3.6-3 3.4.6 2.3 3.2 3.3 1.2M10.6 15.4l1.6-5.1"/>',
-  jump: '<circle cx="12" cy="3.8" r="1.9"/><path d="M12 6.8v6.7M7 8.2l5 2.4 5-2.4M8.5 21l3.5-7.5 3.5 7.5M5 18.5h3.5M15.5 18.5H19"/>',
-  flashlight: '<path d="M8.5 2.5h7v3.8L13.5 9v11.2a1.3 1.3 0 0 1-1.3 1.3h-.4a1.3 1.3 0 0 1-1.3-1.3V9L8.5 6.3z"/><path d="M11 13.5h2M5 3l1.6 1.4M19 3l-1.6 1.4"/>',
-  health: '<path d="M12 20.5s-7.5-4.6-9.2-9.3A4.9 4.9 0 0 1 12 8a4.9 4.9 0 0 1 9.2 3.2C19.5 15.9 12 20.5 12 20.5z"/><path d="M12 10.5v6M9 13.5h6"/>',
-  stamina: '<path d="M12 2.5v8.5M12 11c-.8 1-2 1.3-3 .5M12 11c.8 1 2 1.3 3 .5"/><path d="M8.8 6.5C5.6 6.8 3.5 12 3.5 17c0 2.4 1.3 3.5 3.1 3.5 2 0 3.1-1.2 3.1-3.4v-6.2"/><path d="M15.2 6.5c3.2.3 5.3 5.5 5.3 10.5 0 2.4-1.3 3.5-3.1 3.5-2 0-3.1-1.2-3.1-3.4v-6.2"/>',
-  lockpick: '<path d="M7 11.5V5.3a1.5 1.5 0 0 1 3 0V10M10 9.5V3.8a1.5 1.5 0 0 1 3 0v6M13 10V5.3a1.5 1.5 0 0 1 3 0V11M16 10.5a1.5 1.5 0 0 1 3 0V14c0 4.1-3 7.5-7 7.5h-.8c-2.9 0-4.8-1.6-6-4l-2-4a1.6 1.6 0 0 1 2.8-1.5L7 14"/>',
+  run: '<circle class="f" cx="15.2" cy="3.9" r="2.2"/><path d="M8.3 21.2l2.6-5.2 3 2.3-.5 3.9M5 10.6l3.6-2.6 4 .4 2.4 3.4 3.6 1M11 15.6l1.8-6.4"/>',
+  jump: '<circle class="f" cx="13.6" cy="3.6" r="2.2"/><path d="M12.6 7.4l-1.6 6.6M6.2 9.6l3.2-2.4 3.4.4 2.4 2.8 3.2.4M11 14l3.6 2.2-.6 4.8M11 14l-3 3.4-3.4.4"/>',
+  flashlight: '<path class="f" d="M7.6 2.6h8.8v3.6l-2.3 3.1v11.4a1.6 1.6 0 0 1-1.6 1.6h-1a1.6 1.6 0 0 1-1.6-1.6V9.3L7.6 6.2z"/><path class="cut" d="M11 12.6h2"/>',
+  health: '<path class="f" d="M12 21.2S2.6 15.6 2.6 9.1A4.9 4.9 0 0 1 12 6.8a4.9 4.9 0 0 1 9.4 2.3c0 6.5-9.4 12.1-9.4 12.1z"/><path class="cut" d="M12 10.3v6.2M8.9 13.4h6.2"/>',
+  stamina: '<path d="M12 2.4v8.8M12 11.2c-.9 1-2.1 1.2-3 .4M12 11.2c.9 1 2.1 1.2 3 .4"/><path class="f" d="M9.6 6.4C5.8 6.6 3 12.4 3 17.4c0 2.5 1.4 3.9 3.4 3.9 2.2 0 3.4-1.3 3.4-3.7v-6.5zM14.4 6.4c3.8.2 6.6 6 6.6 11 0 2.5-1.4 3.9-3.4 3.9-2.2 0-3.4-1.3-3.4-3.7v-6.5z"/>',
+  lockpick: '<path class="f" d="M7.6 11.6V5.2a1.4 1.4 0 0 1 2.8 0v5.4h.6V3.6a1.4 1.4 0 0 1 2.8 0v7h.6V5.2a1.4 1.4 0 0 1 2.8 0v6.4h.6V8a1.4 1.4 0 0 1 2.8 0v6.4c0 4.2-3 7.4-7.2 7.4h-1c-2.6 0-4.4-1.3-5.6-3.6l-2.4-4.6a1.5 1.5 0 0 1 2.6-1.5z"/>',
 };
 
 const SKILL_ICON: Record<SkillId, string> = {
@@ -89,7 +90,9 @@ export class ShopScreen {
     back.addEventListener("click", () => this.onClose());
 
     const panels = el("div", "shop__panels");
-    panels.append(this.buildSkillsPanel(), this.buildStorePanel());
+    const storeColumn = el("div", "shop__column");
+    storeColumn.append(this.buildStorePanel(), this.buildTip());
+    panels.append(this.buildSkillsPanel(), storeColumn);
     this.balanceValue = panels.querySelector(".shop__balance .shop__coin-value") as HTMLElement;
 
     this.root.append(back, panels);
@@ -185,17 +188,43 @@ export class ShopScreen {
     header.appendChild(coinTag("shop__balance").root);
     panel.appendChild(header);
 
-    // Предметов пока нет — только место под них (сетка пустых ячеек).
+    // Вкладки категорий — как на референсе; предметов пока нет, поэтому они только
+    // переключают подсветку, а сетка ниже — пустые карточки-заготовки.
+    const tabs = el("div", "shop__tabs");
+    const tabButtons: HTMLButtonElement[] = [];
+    for (const title of ["Все", "Оружие", "Инструменты", "Расходники"]) {
+      const tab = el("button", "shop__tab", title);
+      tab.type = "button";
+      tab.addEventListener("click", () => {
+        for (const other of tabButtons) other.classList.toggle("shop__tab--active", other === tab);
+      });
+      tabButtons.push(tab);
+      tabs.appendChild(tab);
+    }
+    tabButtons[0]?.classList.add("shop__tab--active");
+    panel.appendChild(tabs);
+
     const items = el("div", "shop__items");
-    for (let i = 0; i < 8; i++) items.appendChild(el("div", "shop__item-slot"));
+    for (let i = 0; i < 8; i++) {
+      const card = el("div", "shop__item-slot");
+      card.append(
+        el("span", "shop__item-ph shop__item-ph--image"),
+        el("span", "shop__item-ph shop__item-ph--name"),
+        el("span", "shop__item-ph shop__item-ph--line"),
+        el("span", "shop__item-ph shop__item-ph--buy"),
+      );
+      items.appendChild(card);
+    }
     items.appendChild(el("p", "shop__items-empty", "Предметы скоро появятся"));
     panel.appendChild(items);
+    return panel;
+  }
 
+  private buildTip(): HTMLElement {
     const tip = el("div", "shop__tip");
     const tipIcon = el("span", "shop__tip-icon");
     tipIcon.appendChild(icon("lantern", "shop__svg"));
     tip.append(tipIcon, el("p", "shop__tip-text", "Покупайте предметы и улучшайте навыки, чтобы выжить в этом опасном месте."));
-    panel.appendChild(tip);
-    return panel;
+    return tip;
   }
 }
