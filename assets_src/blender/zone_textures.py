@@ -505,27 +505,6 @@ def tile_clay(n=256):
     return save_set("tile_clay", col, h, 0.75 + 0.0 * h, 0.95 + 0.0 * h, 3.0)
 
 
-def tile_soil(n=256):
-    """Свежая земля холмика у надгробия: тёмные комья разного тона, светлая крошка, редкие всходы. Тайл 0.9 м
-    (≈ 3.5 мм на пиксель: для вида с высоты глаз хватает 256², модель каждого надгробия несёт свою копию)."""
-    k = n / 512.0
-    count = int(520 * k * k)
-    d1, d2, idx = voronoi(n, count, seed=131)
-    rng = np.random.default_rng(132)
-    tone = rng.random(count)[idx]                                     # у каждого кома свой тон
-    clod = 1 - np.clip(d1 / (16.0 * k), 0, 1)                         # купол кома: гребень в центре, шов по краям
-    col = lerp((0.17, 0.125, 0.080), (0.31, 0.23, 0.145), n01(tone - 0.5 + 0.6 * pnoise(n, 2.0, seed=133), 0.5))
-    col = col * (0.82 + 0.28 * clod)[..., None] * (1 + 0.06 * pnoise(n, 1.0, seed=134))[..., None]
-    seam = sstep(0.0, 0.30, np.clip((d2 - d1) / (6.0 * k), 0, 1))     # тёмные щели между комьями
-    col = col * (0.70 + 0.30 * seam)[..., None]
-    grit = sstep(0.80, 0.90, n01(pnoise(n, 0.7, seed=135), 0.3))[..., None]   # светлая крошка и камешки
-    col = col * (1 - 0.7 * grit) + np.array((0.40, 0.35, 0.28)) * 0.7 * grit
-    spr = sstep(0.74, 0.80, n01(pnoise(n, 1.4, seed=136), 0.3))[..., None]    # редкие всходы травы
-    col = col * (1 - 0.7 * spr) + np.array((0.12, 0.19, 0.07)) * 0.7 * spr
-    h = 0.45 * clod + 0.25 * seam + 0.15 * grit[..., 0] + 0.05 * pnoise(n, 1.1, seed=137)
-    return save_set("tile_soil", col, h, 0.93 + 0.0 * h, 0.55 + 0.45 * (0.3 + 0.7 * seam), 4.0)
-
-
 # ----------------------------------------------------------------------------- табличка
 def sign_texture(wood_col):
     w, h = 1024, 256
@@ -564,8 +543,7 @@ if __name__ == "__main__":
     wood_alb, wood_col = tile_wood()
     bark = tile_bark()
     stone = tile_stone()
-    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay(),
-          tile_soil()]
+    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay()]
     sign_texture(wood_col)
     contact_sheet([ground, grass_outer, wood_alb, bark, stone] + v2)
     print("NK: done", flush=True)
