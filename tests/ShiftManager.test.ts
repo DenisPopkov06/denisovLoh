@@ -42,6 +42,18 @@ describe("ShiftManager", () => {
     expect(shiftManager.isShiftComplete()).toBe(true);
   });
 
+  it("reports each completed task once (coin reward hook), not repeat fixes", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onTaskCompleted = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, () => {}, onTaskCompleted);
+    shiftManager.startShift(makeConfig());
+
+    stateMachine.transition("grave_014", ObjectState.NORMAL);
+    stateMachine.transition("grave_014", ObjectState.NORMAL);
+    expect(onTaskCompleted).toHaveBeenCalledTimes(1);
+    expect(onTaskCompleted).toHaveBeenCalledWith("grave_014");
+  });
+
   it("fires onShiftEnd('all_tasks_done') exactly once when the last task is fixed", () => {
     const stateMachine = new ObjectStateMachine();
     const onShiftEnd = vi.fn();

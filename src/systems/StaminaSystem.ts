@@ -9,6 +9,8 @@ export class StaminaSystem {
   // включается на кадр и опять гасит их в ноль — спринт и ходьба чередуются каждый
   // кадр, в среднем давая скорость, почти не отличимую от спринта, а не честную ходьбу.
   private depleted = false;
+  /** Навык "Выносливость": во сколько раз быстрее восстанавливается запас. */
+  private regenMultiplier = 1;
 
   constructor(
     private readonly drainPerSecond = 25,
@@ -17,6 +19,10 @@ export class StaminaSystem {
     private readonly rechargePerSecond = 6,
     private readonly recoveryThresholdPercent = 20,
   ) {}
+
+  setRegenMultiplier(multiplier: number): void {
+    this.regenMultiplier = Math.max(0, multiplier);
+  }
 
   /** wantsSprint — зажата ли клавиша спринта. Реально бежит бегом, только если
    *  запас ещё остался и не действует "отдышка" после полного исчерпания. */
@@ -28,7 +34,7 @@ export class StaminaSystem {
       if (this.staminaPercent === 0) this.depleted = true;
     } else {
       this.sprinting = false;
-      this.staminaPercent = Math.min(100, this.staminaPercent + this.rechargePerSecond * deltaSec);
+      this.staminaPercent = Math.min(100, this.staminaPercent + this.rechargePerSecond * this.regenMultiplier * deltaSec);
       if (this.depleted && this.staminaPercent >= this.recoveryThresholdPercent) this.depleted = false;
     }
   }

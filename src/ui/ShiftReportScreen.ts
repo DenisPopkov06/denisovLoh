@@ -13,6 +13,8 @@ export interface ShiftReportData {
   tasksTotal: number;
   timeSpentSec: number;
   score: number;
+  /** Монеты, заработанные за эту смену (задачи + бонус за полностью закрытую смену). */
+  coinsEarned: number;
 }
 
 function formatDuration(seconds: number): string {
@@ -28,6 +30,7 @@ export class ShiftReportScreen {
   private readonly tasksEl: HTMLElement;
   private readonly timeEl: HTMLElement;
   private readonly scoreEl: HTMLElement;
+  private readonly coinsEl: HTMLElement;
   private readonly nextShiftButton: HTMLButtonElement;
 
   constructor(
@@ -50,11 +53,14 @@ export class ShiftReportScreen {
     this.scoreEl = document.createElement("p");
     this.scoreEl.className = "shift-report__score";
 
+    this.coinsEl = document.createElement("p");
+    this.coinsEl.className = "shift-report__coins";
+
     this.nextShiftButton = document.createElement("button");
     this.nextShiftButton.className = "shift-report__next";
     this.nextShiftButton.addEventListener("click", () => this.onNextShift());
 
-    this.root.append(this.titleEl, this.tasksEl, this.timeEl, this.scoreEl, this.nextShiftButton);
+    this.root.append(this.titleEl, this.tasksEl, this.timeEl, this.scoreEl, this.coinsEl, this.nextShiftButton);
     parent.appendChild(this.root);
   }
 
@@ -67,6 +73,7 @@ export class ShiftReportScreen {
     this.tasksEl.textContent = `Задачи: ${data.tasksCompleted} / ${data.tasksTotal}`;
     this.timeEl.textContent = `Время: ${formatDuration(data.timeSpentSec)}`;
     this.scoreEl.textContent = `Очки: ${data.score}`;
+    this.coinsEl.textContent = `Монеты: +${data.coinsEarned}`;
     this.nextShiftButton.textContent = data.won ? "Следующая смена" : "Начать заново";
     this.root.style.display = "block";
   }

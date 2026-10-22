@@ -54,6 +54,9 @@ export class PlayerController {
   // Был ли текущий/последний прыжок "с разбега" (спринт зажат в момент толчка) —
   // только такой прыжок открывает vaultRequiresSprint-круги (скамья, валуны).
   private runningJump = false;
+  // Навык "Прыжок" (SkillSystem): высота прыжка ∝ v², поэтому скорость толчка
+  // масштабируется корнем множителя высоты.
+  private jumpHeightMultiplier = 1;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -125,6 +128,10 @@ export class PlayerController {
     );
   }
 
+  setJumpHeightMultiplier(multiplier: number): void {
+    this.jumpHeightMultiplier = Math.max(0, multiplier);
+  }
+
   /** Пробел — прыжок простой баллистикой по высоте камеры (не физдвижок, тот же
    *  подход, что у коллизии). Только по земле уходит в прыжок — двойной прыжок
    *  в воздухе не даём. moveWithCollision уже отработал XZ этим кадром, так что
@@ -132,7 +139,8 @@ export class PlayerController {
   private updateJump(deltaSec: number, isSprinting: boolean): void {
     if (this.input.consumeKeyPress("Space") && this.jumpHeight <= 0) {
       this.runningJump = isSprinting;
-      this.verticalVelocity = this.runningJump ? RUNNING_JUMP_SPEED : JUMP_SPEED;
+      this.verticalVelocity =
+        (this.runningJump ? RUNNING_JUMP_SPEED : JUMP_SPEED) * Math.sqrt(this.jumpHeightMultiplier);
     }
 
     if (this.jumpHeight > 0 || this.verticalVelocity > 0) {

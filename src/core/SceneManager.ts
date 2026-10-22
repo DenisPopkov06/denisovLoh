@@ -28,6 +28,9 @@ const ZOMBIE_MODEL_PATH = "models/characters/zombie_walker_rigged.glb";
 const ZOMBIE_WALK_CLIP_TIME_SCALE = 1.6;
 const ZOMBIE_ANIMATION_FADE_SEC = 0.25;
 
+/** Дверь дома смотрителя в zone_*.glb — рядом с ней по E открывается магазин. */
+const SHOP_DOOR_NODE = "house_door_a";
+
 export type ZombieAnimation = "walk" | "attack" | "death";
 const ZOMBIE_ANIMATIONS: readonly ZombieAnimation[] = ["walk", "attack", "death"];
 
@@ -820,6 +823,15 @@ export class SceneManager {
    *  зоны дизайнером) плюс расставленные объекты с collisionMesh в каталоге (дом,
    *  ворота, забор, скамья — длинные/с проходом, круг им не подходит) — для коллизии
    *  игрока лучом вперёд по курсу движения. */
+  /** Точка у двери дома смотрителя (узел SHOP_DOOR_NODE в запечённой геометрии
+   *  зоны) — там открывается магазин. null — в зоне нет дома. */
+  getShopAnchor(): Vec3 | null {
+    const door = this.staticGeometry?.getObjectByName(SHOP_DOOR_NODE);
+    if (!door) return null;
+    const center = new THREE.Box3().setFromObject(door).getCenter(new THREE.Vector3());
+    return { x: center.x, y: center.y, z: center.z };
+  }
+
   getStaticCollisionMeshes(): THREE.Object3D[] {
     const meshes: THREE.Object3D[] = this.staticGeometry ? [this.staticGeometry] : [];
     for (const object of this.objectsById.values()) {

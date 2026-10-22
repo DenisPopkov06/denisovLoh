@@ -15,6 +15,9 @@ export interface HUDState {
   /** Скрыта, пока зомби ещё не появился (ZombieSystem) — показывать полоску жизней
    *  раньше времени нечего, угрозы для неё ещё нет. */
   healthVisible: boolean;
+  /** Игрок у двери дома — вместо обычной подсказки кнопка "E — магазин" (на тач-экране
+   *  по ней можно тапнуть, клавиши E там нет). */
+  shopPromptVisible: boolean;
 }
 
 const LOW_TIME_THRESHOLD_SEC = 30;
@@ -42,6 +45,8 @@ export class HUD {
   private readonly staminaBar: HTMLElement;
   private readonly healthBar: HTMLElement;
   private readonly healthEl: HTMLElement;
+  private readonly shopButton: HTMLButtonElement;
+  private lastShopPromptVisible: boolean | null = null;
 
   private lastChargePercent = -1;
   private lastStaminaPercent = -1;
@@ -54,7 +59,7 @@ export class HUD {
   private flashlightUsedOnce = false;
   private lastPrompt: string | null = "";
 
-  constructor(parent: HTMLElement) {
+  constructor(parent: HTMLElement, onShopClick: () => void = () => {}) {
     this.root = document.createElement("div");
     this.root.className = "hud";
 
@@ -93,6 +98,13 @@ export class HUD {
     this.healthBar.className = "hud__health-bar";
     this.healthEl.appendChild(this.healthBar);
 
+    this.shopButton = document.createElement("button");
+    this.shopButton.type = "button";
+    this.shopButton.className = "hud__shop-button";
+    this.shopButton.textContent = "E — магазин";
+    this.shopButton.style.display = "none";
+    this.shopButton.addEventListener("click", () => onShopClick());
+
     this.root.append(
       flashlight,
       stamina,
@@ -102,6 +114,7 @@ export class HUD {
       this.taskListEl,
       this.promptEl,
       this.pointerLockHint,
+      this.shopButton,
     );
     parent.appendChild(this.root);
   }
@@ -111,7 +124,8 @@ export class HUD {
     this.setFlashlightHint(state.flashlightOn);
     this.setTimeRemaining(state.remainingSec);
     this.setTaskList(state.tasks);
-    this.setInteractionPrompt(state.interactionPrompt);
+    this.setInteractionPrompt(state.shopPromptVisible ? null : state.interactionPrompt);
+    this.setShopPrompt(state.shopPromptVisible);
     this.setPointerLockHint(state.pointerLocked);
     this.setStamina(state.staminaPercent);
     this.setHealth(state.healthPercent, state.healthVisible);
@@ -195,12 +209,23 @@ export class HUD {
     this.promptEl.style.display = prompt ? "" : "none";
   }
 
+  private setShopPrompt(visible: boolean): void {
+    if (visible === this.lastShopPromptVisible) return;
+    this.lastShopPromptVisible = visible;
+    this.shopButton.style.display = visible ? "" : "none";
+  }
+
   /** Без захвата курсора видимая мышь упирается в край экрана — поворот камеры
    *  ограничен и выглядит "сломанным". Явно подсказываем, что нужно кликнуть. */
   private setPointerLockHint(locked: boolean): void {
     if (locked === this.lastPointerLocked) return;
     this.lastPointerLocked = locked;
     this.pointerLockHint.style.display = locked ? "none" : "";
+  }
+
+  /** Прячет весь HUD (например, пока открыт магазин — он закрывает собой экран). */
+  setHidden(hidden: boolean): void {
+    this.root.style.display = hidden ? "none" : "";
   }
 
   destroy(): void {

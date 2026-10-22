@@ -6,9 +6,13 @@ export interface SaveData {
   shiftIndex: number;
   score: number;
   soundVolume: number;
+  /** Монеты (WalletSystem) — награды за задания, тратятся в магазине у дома. */
+  coins: number;
+  /** Уровни навыков (SkillSystem), ключ — SkillId. */
+  skills: Partial<Record<string, number>>;
 }
 
-const DEFAULT_SAVE: SaveData = { shiftIndex: 1, score: 0, soundVolume: 1 };
+const DEFAULT_SAVE: SaveData = { shiftIndex: 1, score: 0, soundVolume: 1, coins: 0, skills: {} };
 
 export class SaveSystem {
   private loadLocal(): SaveData {

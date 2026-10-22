@@ -1,10 +1,17 @@
 import * as THREE from "three";
 
+// Смещение фонаря относительно глаз (м): в правой руке, чуть ниже.
+const FLASHLIGHT_HAND_OFFSET = { x: 0.15, y: -0.2 };
+// На каком расстоянии по линии взгляда центр луча сходится с прицелом.
+const FLASHLIGHT_AIM_DISTANCE = 20;
+
 export class FlashlightSystem {
   readonly light: THREE.SpotLight;
   private readonly target = new THREE.Object3D();
   private chargePercent = 100;
   private on = false;
+  /** Навык "Фонарь": во сколько раз дольше держится заряд (расход делится на него). */
+  private durationMultiplier = 1;
 
   constructor(
     private readonly drainPerSecond = 2,
@@ -13,7 +20,11 @@ export class FlashlightSystem {
     this.light = new THREE.SpotLight(0xfff2cc, 80, 25, Math.PI / 7, 0.4);
     this.light.decay = 1.2;
     this.light.visible = false;
-    this.target.position.set(0, 0, -1);
+    // У SpotLight позиция по умолчанию (0, 1, 0) — на метр выше глаз; с целью в
+    // метре перед камерой луч уходил под 45° вниз, под ноги. Ставим фонарь у руки
+    // (чуть правее и ниже глаз), а цель — далеко по линии взгляда.
+    this.light.position.set(FLASHLIGHT_HAND_OFFSET.x, FLASHLIGHT_HAND_OFFSET.y, 0);
+    this.target.position.set(0, 0, -FLASHLIGHT_AIM_DISTANCE);
     this.light.target = this.target;
 
     this.light.castShadow = true;
@@ -21,6 +32,10 @@ export class FlashlightSystem {
     this.light.shadow.camera.near = 0.5;
     this.light.shadow.camera.far = 25;
     this.light.shadow.bias = -0.003;
+  }
+
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier = Math.max(0.01, multiplier);
   }
 
   /** Привязывает фонарик к камере игрока: конус светит туда, куда смотрит камера. */
@@ -40,7 +55,7 @@ export class FlashlightSystem {
    *  экономии, т.к. вдвое медленнее расхода). */
   update(deltaSec: number): void {
     if (this.on) {
-      this.chargePercent = Math.max(0, this.chargePercent - this.drainPerSecond * deltaSec);
+      this.chargePercent = Math.max(0, this.chargePercent - (this.drainPerSecond / this.durationMultiplier) * deltaSec);
       if (this.chargePercent === 0) {
         this.on = false;
         this.light.visible = false;

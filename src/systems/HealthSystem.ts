@@ -7,6 +7,13 @@ const MAX_HEALTH = 100;
  *  стать неуязвимым, что убивало бы напряжение погони. */
 export class HealthSystem {
   private health = MAX_HEALTH;
+  /** Навык "Здоровье": полоска по-прежнему в процентах, но урон делится на множитель —
+   *  то же самое, что больший запас жизней. */
+  private maxHealthMultiplier = 1;
+
+  setMaxHealthMultiplier(multiplier: number): void {
+    this.maxHealthMultiplier = Math.max(0.01, multiplier);
+  }
 
   reset(): void {
     this.health = MAX_HEALTH;
@@ -16,7 +23,7 @@ export class HealthSystem {
    *  вызывать каждый кадр с 0, когда урона в этот кадр нет. */
   damage(amountPerSecond: number, deltaSec: number): void {
     if (amountPerSecond <= 0) return;
-    this.health = Math.max(0, this.health - amountPerSecond * deltaSec);
+    this.health = Math.max(0, this.health - (amountPerSecond / this.maxHealthMultiplier) * deltaSec);
   }
 
   getHealthPercent(): number {

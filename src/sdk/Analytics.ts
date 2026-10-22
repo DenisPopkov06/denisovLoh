@@ -3,7 +3,8 @@ import { getYsdk, isRunningOnPlatform } from "@/sdk/YandexSDK";
 export type AnalyticsEvent =
   | { name: "shift_start"; shiftIndex: number }
   | { name: "shift_end"; shiftIndex: number; reason: "time_out" | "all_tasks_done" | "caught_by_zombie" }
-  | { name: "hint_used"; shiftIndex: number };
+  | { name: "hint_used"; shiftIndex: number }
+  | { name: "skill_upgrade"; skill: string; level: number };
 
 /**
  * ysdk.features.GameplayAPI размечает начало/конец игровой сессии для площадки
