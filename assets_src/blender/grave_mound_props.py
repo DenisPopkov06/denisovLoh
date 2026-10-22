@@ -1,19 +1,18 @@
-"""Земляной холмик внутри моделей надгробий: камень + земля — ОДНА сущность (один .glb, один узел).
+"""Земляной холмик у надгробия — ОТДЕЛЬНАЯ модель grave_earth_a.glb (надгробия остаются как были).
 
-Куда игра поставит (перемешает, подвинет, подменит вариантом) надгробие — туда уедет и холмик; в модели зоны
-и на карте земли холмиков нет. Вид — прежний (grave_mound.py): низкий неровный эллипсоид с мягким бурым пятном грунта
-(текстура grave_mound_*.jpg вырезана из старой карты земли — grave_mound_texture.py).
-Холмик — второй материал той же модели (primitive; материал помечен extras nk_highlight = "earth" — игра подсвечивает
-землю и камень по отдельности), камень остаётся с запечённым атласом; origin и «перед» (−Y Blender =
-+Z glTF) те же, что у камня, холмик вытянут вперёд от лицевой грани.
+Надгробие и земля — две модели, но одна пара: в layout.json у каждого надгробия есть своя земля (grave_earth_a) на ТОЙ ЖЕ
+позиции и с тем же поворотом (earth_NNN ↔ grave_NNN). origin модели земли = центр основания камня, «перед» (−Y Blender =
++Z glTF) — туда она и вытянута: ближний конец холмика у лицевой грани цоколя, камень стоит чуть позади выкопанной области.
+Земля — обычный декор (без задач, взаимодействия и коллизии): не подсвечивается и не мешает наведению на камень; при
+смене состояния камня (сдвинут / упал / разбит) земля остаётся на месте — как и должно быть у могилы.
 
-Работает с props_cemetery.blend (его пишет bake_props.py — там add_mound() вызывается после запекания, так что
-пересборка пропсов сохраняет холмики). Из окна Blender (через MCP), в отдельных вызовах:
+Вид — прежний (grave_mound.py): низкий неровный эллипсоид с мягким бурым пятном грунта (текстура grave_mound_*.jpg вырезана
+из старой карты земли — grave_mound_texture.py). Модель строится в любом открытом .blend (в сцене остаётся не больше, чем было),
+из окна Blender (через MCP):
 
     import sys, importlib; sys.path.insert(0, r"D:\\dev\\denisovLoh\\assets_src\\blender")
     import grave_mound_props as GP; importlib.reload(GP)
-    GP.open_props()                      # 1) открыть props_cemetery.blend (в своём вызове)
-    GP.export_all(save=True)             # 2) холмик во все надгробия → public/models/props/gravestone_*.glb
+    GP.export_earth()                    # → public/models/props/grave_earth_a.glb
 """
 import os
 import random
@@ -29,33 +28,21 @@ if HERE not in sys.path:
 import grave_mound as GM  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-TEX = os.path.join(REPO, "assets_src", "textures_src")
 OUT_DIR = os.path.join(REPO, "public", "models", "props")
-PROPS_BLEND = os.path.join(HERE, "props_cemetery.blend")
+NAME = "grave_earth_a"
 SOIL_MAT = "mat_grave_mound"
-# extras материала → material.userData в three.js: InteractionSystem подсвечивает землю и камень ПО ОТДЕЛЬНОСТИ
-# (меши с этим тегом — отдельная часть объекта; взаимодействие с надгробием остаётся целиком)
-HIGHLIGHT_KEY, HIGHLIGHT_PART = "nk_highlight", "earth"
-
-GRAVESTONES = [
-    "gravestone_cross_a", "gravestone_arch_a", "gravestone_slab_a",
-    "gravestone_cross_broken_a", "gravestone_slab_broken_a", "gravestone_rubble_a", "gravestone_arch_broken_a",
-    "gravestone_cross_tilted_a", "gravestone_arch_tilted_a", "gravestone_headstone_tilted_a",
-]
 
 
 def soil_material():
-    """Материал земли: PBR из grave_mound_albedo/normal/orm.jpg (те же узлы, что у тайлов зоны).
-    Уже созданный переиспользуется (пересоздание оставило бы пустые слоты у мешей, где он уже стоит)."""
+    """Материал земли: PBR из grave_mound_albedo/normal/orm.jpg (те же узлы, что у тайлов зоны)."""
     mat = bpy.data.materials.get(SOIL_MAT)
     if mat is None:
         import zone_lib as Z
         mat = Z.tile_material(SOIL_MAT, "grave_mound")
-    mat[HIGHLIGHT_KEY] = HIGHLIGHT_PART
     return mat
 
 
-def build_mound(bm, mat_index):
+def build_mound(bm, mat_index=0):
     """Добавляет в bm холмик в координатах модели: х — вправо, −у — вперёд (к лицу), z — вверх. Неровный эллипсоид
     (икосфера, вершины чуть сдвинуты шумом), нижняя половина под землёй срезана; UV — окно текстуры grave_mound_*."""
     rnd = random.Random(GM.SEED)
@@ -78,81 +65,34 @@ def build_mound(bm, mat_index):
     return faces
 
 
-def has_mound(obj):
-    return any(m and m.name == SOIL_MAT for m in obj.data.materials)
-
-
-def add_mound(obj, soil=None):
-    """Холмик в меш надгробия вторым материалом. Идемпотентно: повторный вызов ничего не меняет."""
-    if has_mound(obj):
-        return False
-    soil = soil or bpy.data.materials.get(SOIL_MAT) or soil_material()
-    obj.data.materials.append(soil)
-    idx = len(obj.data.materials) - 1
+def make_object(name=NAME):
+    """Объект «земля» с материалом в начале координат (временный: export_earth() его удаляет)."""
+    old = bpy.data.objects.get(name)
+    if old is not None:
+        bpy.data.objects.remove(old, do_unlink=True)
     bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    build_mound(bm, idx)
-    bm.to_mesh(obj.data)
+    build_mound(bm, 0)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
     bm.free()
-    obj.data.update()
-    return True
+    mesh.materials.append(soil_material())
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
 
 
-def remove_mound(obj):
-    """Убирает холмик (все грани со вторым и следующими материалами и их слоты) — остаётся чистый камень."""
-    if len(obj.data.materials) < 2:
-        return False
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index > 0], context="FACES")
-    bm.to_mesh(obj.data)
-    bm.free()
-    while len(obj.data.materials) > 1:
-        obj.data.materials.pop(index=len(obj.data.materials) - 1)
-    obj.data.update()
-    return True
-
-
-def open_props():
-    """Открывает props_cemetery.blend; картинки с чужими путями (на машине автора) перепривязывает к textures_src."""
-    bpy.ops.wm.open_mainfile(filepath=PROPS_BLEND)
-
-
-def fix_image_paths():
-    fixed = 0
-    for im in bpy.data.images:
-        if im.source == "FILE" and im.filepath and not os.path.exists(bpy.path.abspath(im.filepath)):
-            p = os.path.join(TEX, os.path.basename(im.filepath.replace("\\", "/")))
-            if os.path.exists(p):
-                im.filepath = p
-                im.reload()
-                fixed += 1
-    return fixed
-
-
-def export_all(names=None, save=False, out_dir=None):
-    """Холмик во все надгробия (если ещё нет) и экспорт каждого в public/models/props/<имя>.glb пресетом night_keeper_glb.
-    Модель экспортируется в начале координат (в сцене они лежат рядами для просмотра)."""
+def export_earth(out_dir=None):
+    """Строит grave_earth_a и экспортирует в public/models/props/grave_earth_a.glb пресетом night_keeper_glb."""
     import zone_lib as Z
-    fix_image_paths()
-    names = names or GRAVESTONES
-    soil = soil_material()
-    settings = Z.export_settings()
+    obj = make_object()
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
     out_dir = out_dir or OUT_DIR
     os.makedirs(out_dir, exist_ok=True)
-    res = {}
-    for n in names:
-        obj = bpy.data.objects[n]
-        add_mound(obj, soil)
-        loc = obj.location.copy()
-        obj.location = (0, 0, 0)
-        bpy.ops.object.select_all(action="DESELECT")
-        obj.select_set(True)
-        bpy.context.view_layer.objects.active = obj
-        path = os.path.join(out_dir, n + ".glb")
-        bpy.ops.export_scene.gltf(filepath=path, use_selection=True, **settings)
-        obj.location = loc
-        res[n] = os.path.getsize(path) // 1024
-    if save:
-        bpy.ops.wm.save_mainfile()
-    return res
+    path = os.path.join(out_dir, NAME + ".glb")
+    bpy.ops.export_scene.gltf(filepath=path, use_selection=True, **Z.export_settings())
+    mesh = obj.data
+    bpy.data.objects.remove(obj, do_unlink=True)
+    bpy.data.meshes.remove(mesh)
+    return {"glb_kb": os.path.getsize(path) // 1024}
