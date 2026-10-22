@@ -600,6 +600,380 @@
       },
       "rotationY": 318.4,
       "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_001",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -11.35,
+        "y": 0,
+        "z": 14.27
+      },
+      "rotationY": -3.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_002",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -16.38,
+        "y": 0,
+        "z": 14.21
+      },
+      "rotationY": -1.1,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_003",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -12.93,
+        "y": 0,
+        "z": 11.3
+      },
+      "rotationY": -3.9,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_004",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 8.61,
+        "y": 0,
+        "z": 11.14
+      },
+      "rotationY": -5.2,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_005",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 16.13,
+        "y": 0,
+        "z": 10.93
+      },
+      "rotationY": 2.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_006",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 13.71,
+        "y": 0,
+        "z": 10.9
+      },
+      "rotationY": 6.1,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_007",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -15.99,
+        "y": 0,
+        "z": 10.83
+      },
+      "rotationY": 2.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_008",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -8.01,
+        "y": 0,
+        "z": 10.7
+      },
+      "rotationY": 88.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_009",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 11.03,
+        "y": 0,
+        "z": 10.67
+      },
+      "rotationY": -4.9,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_010",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -7.86,
+        "y": 0,
+        "z": 7.83
+      },
+      "rotationY": 83.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_011",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -15.92,
+        "y": 0,
+        "z": 7.73
+      },
+      "rotationY": -0.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_012",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -13.2,
+        "y": 0,
+        "z": 5.09
+      },
+      "rotationY": -3.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_013",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 8.35,
+        "y": 0,
+        "z": 5
+      },
+      "rotationY": -2.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_014",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -10.86,
+        "y": 0,
+        "z": 4.98
+      },
+      "rotationY": 1.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_015",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 5.67,
+        "y": 0,
+        "z": 4.87
+      },
+      "rotationY": 4.8,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_016",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 15.83,
+        "y": 0,
+        "z": 4.67
+      },
+      "rotationY": 2.1,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_017",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -5.25,
+        "y": 0,
+        "z": 1.82
+      },
+      "rotationY": 6.5,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_018",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 13.67,
+        "y": 0,
+        "z": 1.8
+      },
+      "rotationY": -3.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_019",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -15.79,
+        "y": 0,
+        "z": 1.57
+      },
+      "rotationY": 1.9,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_020",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 8.55,
+        "y": 0,
+        "z": 1.47
+      },
+      "rotationY": 3.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_021",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -10.39,
+        "y": 0,
+        "z": 1.43
+      },
+      "rotationY": 2.2,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_022",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 11.21,
+        "y": 0,
+        "z": 1.32
+      },
+      "rotationY": -6.8,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_023",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 16.62,
+        "y": 0,
+        "z": -7.08
+      },
+      "rotationY": 6.7,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_024",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -15.25,
+        "y": 0,
+        "z": -7.16
+      },
+      "rotationY": -0.4,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_025",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -5.19,
+        "y": 0,
+        "z": -7.44
+      },
+      "rotationY": 6.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_026",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 5.82,
+        "y": 0,
+        "z": -10.28
+      },
+      "rotationY": 5.1,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_027",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 13.83,
+        "y": 0,
+        "z": -10.4
+      },
+      "rotationY": 5.7,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_028",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 10.72,
+        "y": 0,
+        "z": -10.48
+      },
+      "rotationY": -1.4,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_029",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 16.42,
+        "y": 0,
+        "z": -10.74
+      },
+      "rotationY": 6.7,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_030",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -5.65,
+        "y": 0,
+        "z": -10.79
+      },
+      "rotationY": 96.3,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_031",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -5.78,
+        "y": 0,
+        "z": -14.01
+      },
+      "rotationY": 4.6,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_032",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 5.23,
+        "y": 0,
+        "z": -14.19
+      },
+      "rotationY": -4.2,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_033",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": 10.61,
+        "y": 0,
+        "z": -14.47
+      },
+      "rotationY": 1.9,
+      "defaultState": "NORMAL"
+    },
+    {
+      "instanceId": "earth_034",
+      "objectId": "grave_earth_a",
+      "position": {
+        "x": -13.67,
+        "y": 0,
+        "z": -14.54
+      },
+      "rotationY": 0.7,
+      "defaultState": "NORMAL"
     }
   ]
 }
