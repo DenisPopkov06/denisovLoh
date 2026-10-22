@@ -29,7 +29,8 @@
 /* Кнопки экранов: крупные (≥44px под палец), янтарная обводка, свечение на hover/focus. */
 .shift-report__next,
 .pause-menu__resume,
-.pause-menu__exit {
+.pause-menu__exit,
+.win-screen__restart {
   display: block;
   width: 100%;
   min-height: 46px;
@@ -52,28 +53,32 @@
 
 .shift-report__next:hover,
 .pause-menu__resume:hover,
-.pause-menu__exit:hover {
+.pause-menu__exit:hover,
+.win-screen__restart:hover {
   border-color: var(--nk-accent);
   box-shadow: 0 0 14px var(--nk-accent-glow);
 }
 
 .shift-report__next:active,
 .pause-menu__resume:active,
-.pause-menu__exit:active {
+.pause-menu__exit:active,
+.win-screen__restart:active {
   transform: scale(0.98);
 }
 
 .shift-report__next:focus-visible,
 .pause-menu__resume:focus-visible,
 .pause-menu__exit:focus-visible,
-.pause-menu__volume:focus-visible {
+.pause-menu__volume:focus-visible,
+.win-screen__restart:focus-visible {
   outline: 2px solid var(--nk-accent);
   outline-offset: 2px;
 }
 
 /* Главное действие экрана — залитая янтарная кнопка. */
 .shift-report__next,
-.pause-menu__resume {
+.pause-menu__resume,
+.win-screen__restart {
   color: #1a1206;
   font-weight: bold;
   background: linear-gradient(180deg, var(--nk-accent), var(--nk-accent-strong));
@@ -82,7 +87,8 @@
 }
 
 .shift-report__next:hover,
-.pause-menu__resume:hover {
+.pause-menu__resume:hover,
+.win-screen__restart:hover {
   background: linear-gradient(180deg, #ffc56f, var(--nk-accent));
 }
 
@@ -106,7 +112,8 @@
 @media (prefers-reduced-motion: reduce) {
   .shift-report,
   .pause-menu,
-  .hud__timer--low {
+  .hud__timer--low,
+  .hud__hit-marker--active {
     animation: none !important;
   }
 }

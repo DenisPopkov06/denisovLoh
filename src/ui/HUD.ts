@@ -1,6 +1,17 @@
+import type { ItemId } from "@/systems/InventorySystem";
+import { icon, ITEM_ICON_NAME } from "@/ui/icons";
+
 export interface HUDTask {
   label: string;
   done: boolean;
+}
+
+/** Предмет из хотбара (1-5) с горячей клавишей — null в hotkey, если у предмета
+ *  её нет (зарезервировано на будущее, сейчас у всех есть). */
+export interface HUDHotbarItem {
+  id: ItemId;
+  hotkey: string;
+  remaining: number;
 }
 
 export interface HUDState {
@@ -18,6 +29,10 @@ export interface HUDState {
   /** Игрок у двери дома — вместо обычной подсказки кнопка "E — магазин" (на тач-экране
    *  по ней можно тапнуть, клавиши E там нет). */
   shopPromptVisible: boolean;
+  /** null — сейчас ничего не ремонтируется (InteractionSystem.getRepairProgress). */
+  repairProgressPercent: number | null;
+  /** Запас предметов (InventorySystem) — хотбар под прицелом, у каждого своя клавиша. */
+  hotbar: HUDHotbarItem[];
 }
 
 const LOW_TIME_THRESHOLD_SEC = 30;
@@ -46,7 +61,14 @@ export class HUD {
   private readonly healthBar: HTMLElement;
   private readonly healthEl: HTMLElement;
   private readonly shopButton: HTMLButtonElement;
+  private readonly repairBar: HTMLElement;
+  private readonly repairFill: HTMLElement;
+  private readonly hotbarEl: HTMLElement;
+  private readonly hitMarker: HTMLElement;
   private lastShopPromptVisible: boolean | null = null;
+  private lastRepairPercent: number | null = null;
+  private lastHotbarSignature = "";
+  private hitMarkerTimeout: ReturnType<typeof setTimeout> | null = null;
 
   private lastChargePercent = -1;
   private lastStaminaPercent = -1;
@@ -105,6 +127,23 @@ export class HUD {
     this.shopButton.style.display = "none";
     this.shopButton.addEventListener("click", () => onShopClick());
 
+    // Полоса прогресса ремонта (InteractionSystem.getRepairProgress) — раньше
+    // прогресс никак не был виден, кроме текста "Удерживайте E…": навык "Ремонт"
+    // (быстрее лопатой) было физически невозможно заметить в игре. Теперь выше
+    // уровень — быстрее заполняется эта полоса под прицелом.
+    this.repairBar = document.createElement("div");
+    this.repairBar.className = "hud__repair";
+    this.repairBar.style.display = "none";
+    this.repairFill = document.createElement("div");
+    this.repairFill.className = "hud__repair-fill";
+    this.repairBar.appendChild(this.repairFill);
+
+    this.hotbarEl = document.createElement("div");
+    this.hotbarEl.className = "hud__hotbar";
+
+    this.hitMarker = document.createElement("div");
+    this.hitMarker.className = "hud__hit-marker";
+
     this.root.append(
       flashlight,
       stamina,
@@ -113,8 +152,11 @@ export class HUD {
       this.timerEl,
       this.taskListEl,
       this.promptEl,
+      this.repairBar,
       this.pointerLockHint,
       this.shopButton,
+      this.hotbarEl,
+      this.hitMarker,
     );
     parent.appendChild(this.root);
   }
@@ -129,6 +171,55 @@ export class HUD {
     this.setPointerLockHint(state.pointerLocked);
     this.setStamina(state.staminaPercent);
     this.setHealth(state.healthPercent, state.healthVisible);
+    this.setRepairProgress(state.repairProgressPercent);
+    this.setHotbar(state.hotbar);
+  }
+
+  private setRepairProgress(percent: number | null): void {
+    if (percent === this.lastRepairPercent) return;
+    this.lastRepairPercent = percent;
+    this.repairBar.style.display = percent === null ? "none" : "";
+    if (percent !== null) this.repairFill.style.width = `${Math.round(Math.max(0, Math.min(1, percent)) * 100)}%`;
+  }
+
+  private setHotbar(items: HUDHotbarItem[]): void {
+    const signature = items.map((item) => `${item.id}:${item.hotkey}:${item.remaining}`).join("|");
+    if (signature === this.lastHotbarSignature) return;
+    this.lastHotbarSignature = signature;
+
+    this.hotbarEl.replaceChildren(
+      ...items.map((item) => {
+        const slot = document.createElement("div");
+        slot.className = "hud__hotbar-slot";
+        slot.classList.toggle("hud__hotbar-slot--empty", item.remaining <= 0);
+
+        const iconBox = document.createElement("span");
+        iconBox.className = "hud__hotbar-icon";
+        iconBox.appendChild(icon(ITEM_ICON_NAME[item.id], "hud__hotbar-svg"));
+
+        const key = document.createElement("span");
+        key.className = "hud__hotbar-key";
+        key.textContent = item.hotkey;
+
+        const count = document.createElement("span");
+        count.className = "hud__hotbar-count";
+        count.textContent = String(Math.round(item.remaining));
+
+        slot.append(iconBox, key, count);
+        return slot;
+      }),
+    );
+  }
+
+  /** Короткая вспышка прицела — обратная связь для выстрела из пистолета. */
+  showHitMarker(): void {
+    this.hitMarker.classList.remove("hud__hit-marker--active");
+    // Форсируем reflow, чтобы повторный выстрел перезапускал анимацию, а не
+    // продолжал уже идущую (classList.add сразу после remove иначе не сработает).
+    void this.hitMarker.offsetWidth;
+    this.hitMarker.classList.add("hud__hit-marker--active");
+    if (this.hitMarkerTimeout) clearTimeout(this.hitMarkerTimeout);
+    this.hitMarkerTimeout = setTimeout(() => this.hitMarker.classList.remove("hud__hit-marker--active"), 220);
   }
 
   private setFlashlightCharge(percent: number): void {
@@ -229,6 +320,7 @@ export class HUD {
   }
 
   destroy(): void {
+    if (this.hitMarkerTimeout) clearTimeout(this.hitMarkerTimeout);
     this.root.remove();
   }
 }

@@ -1,4 +1,6 @@
 import { SKILLS, SKILL_MAX_LEVEL, type SkillId } from "@/systems/SkillSystem";
+import { ITEMS, type ItemId, type ItemCategory } from "@/systems/InventorySystem";
+import { icon, ITEM_ICON_NAME } from "@/ui/icons";
 
 export interface ShopSkillState {
   level: number;
@@ -6,27 +8,17 @@ export interface ShopSkillState {
   cost: number | null;
 }
 
+export interface ShopItemState {
+  remaining: number;
+  /** null — больше не купить (ключ, если уже есть). */
+  cost: number | null;
+}
+
 export interface ShopState {
   coins: number;
   skills: Record<SkillId, ShopSkillState>;
+  items: Record<ItemId, ShopItemState>;
 }
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-/** Пиктограммы 24×24 — залитые серые силуэты, как на референсе магазина.
- *  Класс "f" — заливка, остальное — толстая обводка (руки/ноги фигурок). */
-const ICONS: Record<string, string> = {
-  star: '<path class="f" d="M12 2.2l2.95 6.1 6.7.95-4.85 4.7 1.15 6.65L12 17.45l-5.95 3.15 1.15-6.65L2.35 9.25l6.7-.95z"/>',
-  bag: '<path class="f" d="M8.6 2.6c1.2.7 2.2-.3 3.4-.3s2.2 1 3.4.3l-1.7 3.6h-3.4z"/><path class="f" d="M9.2 7.1h5.6c3.6 2.8 5.9 6.4 5.9 9.6 0 2.9-2 4.8-5 4.8H8.3c-3 0-5-1.9-5-4.8 0-3.2 2.3-6.8 5.9-9.6z"/><path class="cut" d="M12 10.6v8M14.1 12.1c-.4-.7-1.1-1-2.1-1-1.2 0-2 .6-2 1.5 0 2 4.2 1 4.2 3 0 .9-.9 1.6-2.2 1.6-1 0-1.8-.4-2.2-1.1"/>',
-  lantern: '<path class="f" d="M9.5 2.5h5v1.6h-5zM8 5h8l-1.2 2.2v9.6L16 19H8l1.2-2.2V7.2z"/><path class="f" d="M7.5 19.6h9v1.9h-9z"/><path class="glow" d="M12 9.2c1.3 1.4 1.6 2.6 1.6 3.6a1.6 1.6 0 0 1-3.2 0c0-1 .3-2.2 1.6-3.6z"/>',
-  back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
-  run: '<circle class="f" cx="15.2" cy="3.9" r="2.2"/><path d="M8.3 21.2l2.6-5.2 3 2.3-.5 3.9M5 10.6l3.6-2.6 4 .4 2.4 3.4 3.6 1M11 15.6l1.8-6.4"/>',
-  jump: '<circle class="f" cx="13.6" cy="3.6" r="2.2"/><path d="M12.6 7.4l-1.6 6.6M6.2 9.6l3.2-2.4 3.4.4 2.4 2.8 3.2.4M11 14l3.6 2.2-.6 4.8M11 14l-3 3.4-3.4.4"/>',
-  flashlight: '<path class="f" d="M7.6 2.6h8.8v3.6l-2.3 3.1v11.4a1.6 1.6 0 0 1-1.6 1.6h-1a1.6 1.6 0 0 1-1.6-1.6V9.3L7.6 6.2z"/><path class="cut" d="M11 12.6h2"/>',
-  health: '<path class="f" d="M12 21.2S2.6 15.6 2.6 9.1A4.9 4.9 0 0 1 12 6.8a4.9 4.9 0 0 1 9.4 2.3c0 6.5-9.4 12.1-9.4 12.1z"/><path class="cut" d="M12 10.3v6.2M8.9 13.4h6.2"/>',
-  stamina: '<path d="M12 2.4v8.8M12 11.2c-.9 1-2.1 1.2-3 .4M12 11.2c.9 1 2.1 1.2 3 .4"/><path class="f" d="M9.6 6.4C5.8 6.6 3 12.4 3 17.4c0 2.5 1.4 3.9 3.4 3.9 2.2 0 3.4-1.3 3.4-3.7v-6.5zM14.4 6.4c3.8.2 6.6 6 6.6 11 0 2.5-1.4 3.9-3.4 3.9-2.2 0-3.4-1.3-3.4-3.7v-6.5z"/>',
-  lockpick: '<path class="f" d="M7.6 11.6V5.2a1.4 1.4 0 0 1 2.8 0v5.4h.6V3.6a1.4 1.4 0 0 1 2.8 0v7h.6V5.2a1.4 1.4 0 0 1 2.8 0v6.4h.6V8a1.4 1.4 0 0 1 2.8 0v6.4c0 4.2-3 7.4-7.2 7.4h-1c-2.6 0-4.4-1.3-5.6-3.6l-2.4-4.6a1.5 1.5 0 0 1 2.6-1.5z"/>',
-};
 
 const SKILL_ICON: Record<SkillId, string> = {
   run: "run",
@@ -34,17 +26,20 @@ const SKILL_ICON: Record<SkillId, string> = {
   flashlight: "flashlight",
   health: "health",
   stamina: "stamina",
-  lockpick: "lockpick",
+  repair: "shovel",
 };
 
-function icon(name: string, className: string): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("class", className);
-  svg.innerHTML = ICONS[name] ?? "";
-  return svg;
+interface ShopTab {
+  title: string;
+  category: ItemCategory | null;
 }
+
+const TABS: readonly ShopTab[] = [
+  { title: "Все", category: null },
+  { title: "Оружие", category: "weapon" },
+  { title: "Инструменты", category: "tool" },
+  { title: "Расходники", category: "consumable" },
+];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -68,18 +63,31 @@ interface SkillRow {
   button: HTMLButtonElement;
 }
 
-/** Магазин у дома смотрителя (E у двери): слева прокачка навыков, справа — область
- *  под предметы (пока пустая). Пока открыт — игра и таймер смены на паузе (Game). */
+interface ItemRow {
+  card: HTMLElement;
+  durabilityFill: HTMLElement;
+  stockText: HTMLElement;
+  price: HTMLElement;
+  priceValue: HTMLElement;
+  button: HTMLButtonElement;
+}
+
+/** Магазин у дома смотрителя (E у двери): слева прокачка навыков, справа — предметы
+ *  (патроны/бинты/лопата и т.п., InventorySystem). Пока открыт — игра и таймер смены
+ *  на паузе (Game). */
 export class ShopScreen {
   private readonly root: HTMLElement;
   private readonly balanceValue: HTMLElement;
   private readonly rows = new Map<SkillId, SkillRow>();
+  private readonly itemRows = new Map<ItemId, ItemRow>();
+  private activeCategory: ItemCategory | null = null;
   private visible = false;
 
   constructor(
     parent: HTMLElement,
     private readonly onUpgrade: (id: SkillId) => void,
     private readonly onClose: () => void,
+    private readonly onBuyItem: (id: ItemId) => void,
   ) {
     this.root = el("div", "shop");
     this.root.style.display = "none";
@@ -114,7 +122,7 @@ export class ShopScreen {
     return this.visible;
   }
 
-  /** Перерисовывает баланс и строки навыков (после покупки или при открытии). */
+  /** Перерисовывает баланс, строки навыков и предметов (после покупки или при открытии). */
   update(state: ShopState): void {
     this.balanceValue.textContent = String(state.coins);
     for (const skill of SKILLS) {
@@ -130,6 +138,23 @@ export class ShopScreen {
       row.button.textContent = maxed ? "Макс." : "Улучшить";
       row.button.disabled = !affordable;
       row.price.classList.toggle("shop__price--short", !maxed && !affordable);
+    }
+    for (const item of ITEMS) {
+      const row = this.itemRows.get(item.id);
+      const s = state.items[item.id];
+      if (!row || !s) continue;
+      const fillPercent = Math.round(Math.min(1, s.remaining / item.rechargeAmount) * 100);
+      row.durabilityFill.style.width = `${fillPercent}%`;
+      row.stockText.textContent = s.remaining > 0 ? `${Math.round(s.remaining)} ${item.unit}` : "Нет в запасе";
+
+      const soldOut = s.cost === null;
+      row.price.style.visibility = soldOut ? "hidden" : "";
+      row.priceValue.textContent = soldOut ? "" : String(s.cost);
+      const affordable = !soldOut && state.coins >= (s.cost ?? 0);
+      row.button.textContent = soldOut ? "Есть" : "Купить";
+      row.button.disabled = !affordable;
+      row.price.classList.toggle("shop__price--short", !soldOut && !affordable);
+      row.card.style.display = this.activeCategory === null || item.category === this.activeCategory ? "" : "none";
     }
   }
 
@@ -188,36 +213,58 @@ export class ShopScreen {
     header.appendChild(coinTag("shop__balance").root);
     panel.appendChild(header);
 
-    // Вкладки категорий — как на референсе; предметов пока нет, поэтому они только
-    // переключают подсветку, а сетка ниже — пустые карточки-заготовки.
     const tabs = el("div", "shop__tabs");
     const tabButtons: HTMLButtonElement[] = [];
-    for (const title of ["Все", "Оружие", "Инструменты", "Расходники"]) {
-      const tab = el("button", "shop__tab", title);
-      tab.type = "button";
-      tab.addEventListener("click", () => {
-        for (const other of tabButtons) other.classList.toggle("shop__tab--active", other === tab);
+    TABS.forEach((tab, index) => {
+      const button = el("button", "shop__tab", tab.title);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.activeCategory = tab.category;
+        tabButtons.forEach((other, otherIndex) => other.classList.toggle("shop__tab--active", otherIndex === index));
+        this.refreshItemVisibility();
       });
-      tabButtons.push(tab);
-      tabs.appendChild(tab);
-    }
+      tabButtons.push(button);
+      tabs.appendChild(button);
+    });
     tabButtons[0]?.classList.add("shop__tab--active");
     panel.appendChild(tabs);
 
     const items = el("div", "shop__items");
-    for (let i = 0; i < 8; i++) {
-      const card = el("div", "shop__item-slot");
-      card.append(
-        el("span", "shop__item-ph shop__item-ph--image"),
-        el("span", "shop__item-ph shop__item-ph--name"),
-        el("span", "shop__item-ph shop__item-ph--line"),
-        el("span", "shop__item-ph shop__item-ph--buy"),
-      );
+    for (const item of ITEMS) {
+      const card = el("div", "shop__item-card");
+
+      const iconBox = el("span", "shop__item-icon");
+      iconBox.appendChild(icon(ITEM_ICON_NAME[item.id], "shop__svg"));
+
+      const name = el("span", "shop__item-name", item.title);
+      const desc = el("p", "shop__item-desc", item.description);
+
+      const durability = el("div", "shop__item-durability");
+      const durabilityFill = el("span", "shop__item-durability-fill");
+      durability.appendChild(durabilityFill);
+      const stockText = el("p", "shop__item-stock");
+
+      const buy = el("div", "shop__item-buy");
+      const price = coinTag("shop__price");
+      const button = el("button", "shop__upgrade", "Купить");
+      button.type = "button";
+      button.addEventListener("click", () => this.onBuyItem(item.id));
+      buy.append(price.root, button);
+
+      card.append(iconBox, name, desc, durability, stockText, buy);
       items.appendChild(card);
+      this.itemRows.set(item.id, { card, durabilityFill, stockText, price: price.root, priceValue: price.value, button });
     }
-    items.appendChild(el("p", "shop__items-empty", "Предметы скоро появятся"));
     panel.appendChild(items);
     return panel;
+  }
+
+  private refreshItemVisibility(): void {
+    for (const item of ITEMS) {
+      const row = this.itemRows.get(item.id);
+      if (!row) continue;
+      row.card.style.display = this.activeCategory === null || item.category === this.activeCategory ? "" : "none";
+    }
   }
 
   private buildTip(): HTMLElement {

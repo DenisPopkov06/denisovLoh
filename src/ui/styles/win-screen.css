@@ -1,0 +1,49 @@
+/* Экран победы (WinScreen) — тот же модальный приём, что у shift-report.css
+   (нет общего "диалогового" базового класса, поэтому повторяем оформление). */
+
+.win-screen {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 420px);
+  max-height: 92vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: clamp(20px, 4.4vmin, 34px);
+  text-align: center;
+  background: linear-gradient(180deg, rgba(14, 22, 42, 0.96), rgba(8, 13, 26, 0.96));
+  border: 1px solid var(--nk-accent);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 100vmax rgba(2, 4, 10, 0.72),
+    0 18px 60px rgba(0, 0, 0, 0.6),
+    0 0 40px var(--nk-accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: nk-pop 0.25s ease-out;
+}
+
+.win-screen__title {
+  margin: 0 0 0.7em;
+  padding-bottom: 0.7em;
+  font-size: clamp(24px, 5vmin, 36px);
+  font-weight: normal;
+  letter-spacing: 0.06em;
+  color: var(--nk-accent);
+  background: linear-gradient(90deg, transparent, var(--nk-accent), transparent) bottom / 70% 1px no-repeat;
+  text-shadow: 0 0 18px var(--nk-accent-glow);
+}
+
+.win-screen__text {
+  margin: 0 0 1.2em;
+  font-size: clamp(14px, 2.6vmin, 18px);
+  line-height: 1.4;
+  color: var(--nk-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win-screen {
+    animation: none;
+  }
+}

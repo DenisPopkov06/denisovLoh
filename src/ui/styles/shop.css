@@ -418,73 +418,83 @@
   box-shadow: 0 0 10px rgba(110, 120, 180, 0.35);
 }
 
-/* --- сетка предметов: пока пустые карточки-заготовки --- */
+/* --- сетка предметов --- */
 .shop__items {
   position: relative;
   flex: 1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: minmax(110px, 1fr);
+  grid-auto-rows: minmax(150px, 1fr);
   gap: clamp(6px, 1.3vmin, 12px);
   min-height: 0;
+  overflow-y: auto;
 }
 
-.shop__item-slot {
+.shop__item-card {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   padding: clamp(8px, 1.4vmin, 12px);
   background: var(--shop-card);
   border: 1px solid var(--shop-card-border);
   border-radius: 7px;
 }
 
-.shop__item-ph {
-  display: block;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.045);
+.shop__item-icon {
+  align-self: center;
+  width: clamp(28px, 4.6vmin, 38px);
+  height: clamp(28px, 4.6vmin, 38px);
+  color: #b4b8c0;
 }
 
-.shop__item-ph--image {
-  flex: 1;
-  min-height: 24px;
-  margin: 0 18%;
-  border-radius: 6px;
-}
-
-.shop__item-ph--name {
-  width: 55%;
-  height: 9px;
-}
-
-.shop__item-ph--line {
-  width: 80%;
-  height: 6px;
-}
-
-.shop__item-ph--buy {
-  align-self: flex-end;
-  width: 42%;
-  height: 18px;
-  border-radius: 4px;
-}
-
-.shop__items-empty {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  padding: 0.55em 1.2em;
-  font-size: clamp(12px, 2.1vmin, 15px);
-  letter-spacing: 0.08em;
+.shop__item-name {
+  font-size: clamp(11px, 1.9vmin, 14px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  white-space: nowrap;
+  text-align: center;
+  color: var(--shop-text);
+}
+
+.shop__item-desc {
+  flex: 1;
+  margin: 0;
+  font-size: clamp(9px, 1.4vmin, 11px);
+  line-height: 1.3;
+  text-align: center;
   color: var(--shop-muted);
-  background: rgba(5, 8, 13, 0.85);
-  border: 1px solid var(--shop-card-border);
-  border-radius: 6px;
-  pointer-events: none;
+}
+
+.shop__item-durability {
+  height: 5px;
+  border-radius: 2px;
+  background: var(--shop-seg-off);
+  overflow: hidden;
+}
+
+.shop__item-durability-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #c3d483, var(--shop-seg) 50%, #8a9c52);
+}
+
+.shop__item-stock {
+  margin: 0;
+  font-size: clamp(9px, 1.4vmin, 11px);
+  text-align: center;
+  color: var(--shop-muted);
+}
+
+.shop__item-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3em;
+}
+
+.shop__item-buy .shop__price {
+  justify-content: center;
+  font-size: clamp(11px, 1.9vmin, 14px);
 }
 
 /* --- подсказка: отдельная плитка под магазином --- */
@@ -558,7 +568,7 @@
 
   .shop__items {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: 110px;
+    grid-auto-rows: 170px;
   }
 }
 
