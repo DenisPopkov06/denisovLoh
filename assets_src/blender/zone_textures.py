@@ -1,7 +1,7 @@
 """Текстуры зоны «Старое кладбище» (синтез на numpy): уникальная земля, тайлы, табличка ворот.
 
 Земля — ОДНА уникальная карта 2048² на всю зону (ground_old_cemetery_*, ≈2 см/пиксель, без повторов):
-трава, проплешины, подстилка, холмики у надгробий (по layout.json), тропы. Тайлы дерево/кора/камень —
+трава, проплешины, подстилка, тропы (холмики у надгробий — часть моделей надгробий, не зоны). Тайлы дерево/кора/камень —
 albedo / normal / ORM (JPEG) в assets_src/textures_src/ с префиксом tile_. Шум периодический (FFT), поэтому швов при повторе нет. Табличка ворот —
 отдельная текстура 1024x256 с надписью (шрифт Times New Roman Bold, кириллица).
 
@@ -19,7 +19,6 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import bake_props  # noqa: E402  (render_text_mask, TMP, FONT_BOLD)
-import grave_mound as GMD  # noqa: E402  (форма холмика у надгробия — общая с zone_lib)
 
 TEX_DIR = bake_props.TEX_DIR
 os.makedirs(TEX_DIR, exist_ok=True)
@@ -208,22 +207,6 @@ def ground_unique():
     weeds = sstep(1.1, 0.0, inside) * (0.55 + 0.45 * n01(field(0.45, 114), 0.3))
     col = col * (1 - 0.45 * weeds[..., None]) + np.array((0.055, 0.105, 0.04)) * 0.45 * weeds[..., None]
 
-    # --- холмики перед надгробиями (по layout.json): земля, редкие всходы. Форма — та же функция, что строит геометрию
-    # холмика (grave_mound.height): пятно грунта ложится ровно на меш, голова уходит под цоколь надгробия
-    graves = GMD.graves_from_layout(json.load(open(LAYOUT, encoding="utf-8"))["objects"])
-    mound_m = np.zeros((GN, GN), np.float32)
-    mound_tone, sprout = field(0.12, 131, 1.6), field(0.1, 132, 1.6)
-    for gx, gy, fx, fy, wh in graves:
-        cx, cy = gx + fx * 1.05, gy + fy * 1.05
-        sy, sx, wx, wy = window(cx, cy, 1.6)
-        u, v = GMD.to_local(wx, wy, gx, gy, fx, fy)
-        mound_m[sy, sx] = np.maximum(mound_m[sy, sx], sstep(0.0, 0.016, GMD.height(u, v, wh)))
-    mcol = lerp((0.20, 0.15, 0.095), (0.30, 0.225, 0.14), n01(mound_tone, 0.3))
-    spr = sstep(0.62, 0.74, n01(sprout, 0.3))[..., None]
-    mcol = mcol * (1 - 0.7 * spr) + np.array((0.12, 0.19, 0.07)) * 0.7 * spr
-    col = col * (1 - 0.88 * mound_m[..., None]) + mcol * 0.88 * mound_m[..., None]
-    height += 0.04 * mound_m
-
     # --- утоптанный двор у дома и пятно у основания креста
     x0, x1, y0, y1 = YARD
     dyard = np.maximum(np.maximum(x0 - X, X - x1), np.maximum(y0 - Y, Y - y1)) + 0.45 * field(0.8, 160)
@@ -261,7 +244,7 @@ def ground_unique():
     height = height * (1 - 0.6 * pm) + 0.30 * pm + 0.35 * peb * pm
 
     # --- редкие полевые цветы (мелкие крапинки на траве)
-    fl = sstep(2.55, 2.95, field(0.07, 150, 1.0)) * (1 - pm) * (1 - soil_m) * (1 - mound_m)
+    fl = sstep(2.55, 2.95, field(0.07, 150, 1.0)) * (1 - pm) * (1 - soil_m)
     ftone = n01(field(2.0, 151), 0.5)
     fcol = lerp((0.62, 0.60, 0.45), (0.55, 0.45, 0.62), ftone)
     col = col * (1 - 0.9 * fl[..., None]) + fcol * 0.9 * fl[..., None]
@@ -522,6 +505,27 @@ def tile_clay(n=256):
     return save_set("tile_clay", col, h, 0.75 + 0.0 * h, 0.95 + 0.0 * h, 3.0)
 
 
+def tile_soil(n=256):
+    """Свежая земля холмика у надгробия: тёмные комья разного тона, светлая крошка, редкие всходы. Тайл 0.9 м
+    (≈ 3.5 мм на пиксель: для вида с высоты глаз хватает 256², модель каждого надгробия несёт свою копию)."""
+    k = n / 512.0
+    count = int(520 * k * k)
+    d1, d2, idx = voronoi(n, count, seed=131)
+    rng = np.random.default_rng(132)
+    tone = rng.random(count)[idx]                                     # у каждого кома свой тон
+    clod = 1 - np.clip(d1 / (16.0 * k), 0, 1)                         # купол кома: гребень в центре, шов по краям
+    col = lerp((0.17, 0.125, 0.080), (0.31, 0.23, 0.145), n01(tone - 0.5 + 0.6 * pnoise(n, 2.0, seed=133), 0.5))
+    col = col * (0.82 + 0.28 * clod)[..., None] * (1 + 0.06 * pnoise(n, 1.0, seed=134))[..., None]
+    seam = sstep(0.0, 0.30, np.clip((d2 - d1) / (6.0 * k), 0, 1))     # тёмные щели между комьями
+    col = col * (0.70 + 0.30 * seam)[..., None]
+    grit = sstep(0.80, 0.90, n01(pnoise(n, 0.7, seed=135), 0.3))[..., None]   # светлая крошка и камешки
+    col = col * (1 - 0.7 * grit) + np.array((0.40, 0.35, 0.28)) * 0.7 * grit
+    spr = sstep(0.74, 0.80, n01(pnoise(n, 1.4, seed=136), 0.3))[..., None]    # редкие всходы травы
+    col = col * (1 - 0.7 * spr) + np.array((0.12, 0.19, 0.07)) * 0.7 * spr
+    h = 0.45 * clod + 0.25 * seam + 0.15 * grit[..., 0] + 0.05 * pnoise(n, 1.1, seed=137)
+    return save_set("tile_soil", col, h, 0.93 + 0.0 * h, 0.55 + 0.45 * (0.3 + 0.7 * seam), 4.0)
+
+
 # ----------------------------------------------------------------------------- табличка
 def sign_texture(wood_col):
     w, h = 1024, 256
@@ -560,7 +564,8 @@ if __name__ == "__main__":
     wood_alb, wood_col = tile_wood()
     bark = tile_bark()
     stone = tile_stone()
-    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay()]
+    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay(),
+          tile_soil()]
     sign_texture(wood_col)
     contact_sheet([ground, grass_outer, wood_alb, bark, stone] + v2)
     print("NK: done", flush=True)

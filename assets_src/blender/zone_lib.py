@@ -15,17 +15,12 @@ import random
 import re
 import ast
 import json
-import sys
 
 import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
 
 HERE = os.environ.get("NK_ASSETS", r"D:\dev\denisovLoh\assets_src\blender")
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
-import grave_mound as GMD  # noqa: E402  (общая форма холмика у надгробия)
-
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 TEX = os.path.join(REPO, "assets_src", "textures_src")
 OUT_GLB = os.path.join(REPO, "public", "models", "zone_old_cemetery.glb")
@@ -426,49 +421,6 @@ def build_path_stones(M=None, count=230):
         placed += 1
     _, t = finish("path_stones_a", bm, [M["stone"]])
     return {"path_stones": t, "count": placed}
-
-
-def build_mounds(M=None):
-    """Земляные холмики у надгробий (по layout.json), форма — grave_mound.py (она же рисует пятно грунта в
-    zone_textures.ground_unique и задаёт высоту предметов на холмике). Голова холмика во всю ширину упирается в цоколь
-    и уходит под него: надгробие и закопанная земля — одно целое. UV мировые, как у земли: сливаются с грунтом."""
-    M = M or mats()
-    clear("grave_mounds_")
-    bm = bmesh.new()
-    nu, nv = 22, 10                                   # срезов вдоль холмика, ячеек поперёк
-    count = 0
-    for gx, gy, fx, fy, wh in GMD.graves_from_layout(layout_objects()):
-        def at(u, v):
-            """Мировая точка поверхности холмика в локальных (u вперёд, v вправо); край утоплен под землю."""
-            z = float(GMD.height(u, v, wh)) - GMD.EMBED
-            return bm.verts.new((gx + u * fx - v * fy, gy + u * fy + v * fx, z))
-
-        us = [GMD.U_BACK + (GMD.U_FOOT - GMD.U_BACK) * (1 - math.cos(math.pi * i / nu)) / 2 for i in range(nu + 1)]
-        tail = at(us[0], 0.0)                                         # острые концы: задний край и ноги
-        head = at(us[-1], 0.0)
-        rings = []
-        for u in us[1:-1]:
-            w = float(GMD.half_width(u, wh))
-            rings.append([at(u, w * (2 * j / nv - 1)) for j in range(nv + 1)])
-        faces = []
-        for j in range(nv):
-            faces.append(bm.faces.new((tail, rings[0][j + 1], rings[0][j])))
-            faces.append(bm.faces.new((head, rings[-1][j], rings[-1][j + 1])))
-            for i in range(len(rings) - 1):
-                faces.append(bm.faces.new((rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j])))
-        for f in faces:
-            f.normal_update()
-            if f.normal.z < 0:
-                f.normal_flip()
-        count += 1
-    uv = bm.loops.layers.uv.verify()
-    for f in bm.faces:
-        f.material_index = 0
-        for lp in f.loops:
-            x, y, _ = lp.vert.co
-            lp[uv].uv = ((x + HALF) / (2 * HALF), (y + HALF) / (2 * HALF))
-    _, t = finish("grave_mounds_a", bm, [M["ground"]], smooth=True)
-    return {"grave_mounds": t, "count": count}
 
 
 def _fence_post(bm, P, hgt):
@@ -1497,7 +1449,7 @@ def build_moon_light():
     return {"moon_light": tuple(round(v, 1) for v in pos), "intensity": MOON_POWER}
 
 
-STEPS = [build_ground, build_path_stones, build_mounds, build_fence, build_gate, build_trees, build_lamp,
+STEPS = [build_ground, build_path_stones, build_fence, build_gate, build_trees, build_lamp,
          build_lantern_light, build_bench, build_house, build_house_details, build_house_lights, build_crates,
          build_barrels, build_pedestal, build_grass, build_flowers, build_rocks, build_twigs,
          build_terrain_outer, build_forest, build_moon_light]

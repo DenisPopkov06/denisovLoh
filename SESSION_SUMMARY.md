@@ -156,7 +156,7 @@
 - Координаты: Blender (x, y, z) → glTF (x, z, −y). Зона: земля ±20, ограда ±19.5, ворота на юге (y = −19.5), главная тропа идёт на север к крыльцу дома (до y = 13.2).
 - Короткие пути для Python/Blender (длинные ломались): `C:\Users\pansa\AppData\Local\Temp\nk\`.
 - Текстуры генерируются numpy в Blender CLI: `blender --background --factory-startup --python assets_src/blender/zone_textures.py`. Пропсы: `bake_props.py`.
-- Если меняется `layout.json` (надгробия) — перегенерировать текстуру земли и `build_mounds()`.
+- Земляные холмики — часть моделей надгробий (`grave_mound.py` — форма, `grave_mound_props.py` — вшивание и экспорт), в зоне и на карте земли их нет: правка `layout.json` ничего перегенерировать не требует.
 - Пример вызова из окна Blender через MCP: `import sys, importlib; sys.path.insert(0, r"D:\dev\denisovLoh\assets_src\blender"); import zone_lib, props_kit; importlib.reload(zone_lib); importlib.reload(props_kit); props_kit.build_all(); props_kit.export_all()`.
 - Dev-сервер: `preview_start` «night-keeper-dev», порт 5173.
 - Прошлые ошибки, чтобы не повторять: перезапись чужих tracked-файлов (`.claude/launch.json`), забытый `public/draco` (чёрный экран), свет в канделах вместо RAW, сборка пользовательской структуры «с кодом» вместо пустых файлов.
