@@ -4,6 +4,7 @@
 (камень/глина, трещины, мох, грязь, гравировка), запекает albedo / normal / ORM,
 пишет текстуры в assets_src/textures_src/, экспортирует .glb в public/models/props/
 по пресету night_keeper_glb и сохраняет props_cemetery.blend.
+В каждое надгробие вшит земляной холмик (grave_mound_props.add_mound): камень + земля — одна модель.
 
 Запуск (из корня репозитория):
     blender --background --factory-startup --python assets_src/blender/bake_props.py
@@ -38,60 +39,60 @@ ONLY = [n for n in os.environ.get("NK_ONLY", "").split(",") if n]
 # надписи на лицевой стороне (-Y) в метрах: (x, z) центра и (ширина, высота).
 PROPS = {
     "gravestone_cross_a": dict(
-        kind="stone", size=1024, x=-2.4, crack=0.8, moss=0.9, moss_h=0.32,
+        kind="stone", size=1024, x=-1.9, crack=0.8, moss=0.9, moss_h=0.32,
         colors=((0.12, 0.12, 0.13), (0.23, 0.22, 0.21)),
         text=dict(lines=["ПОКОЙСЯ С МИРОМ"], center=(0.0, 0.18), size=(0.46, 0.07), font=FONT_BOLD),
     ),
     "gravestone_arch_a": dict(
-        kind="stone", size=1024, x=-1.2, crack=1.0, moss=0.7, moss_h=0.30,
+        kind="stone", size=1024, x=0.0, crack=1.0, moss=0.7, moss_h=0.30,
         colors=((0.13, 0.13, 0.14), (0.24, 0.23, 0.22)),
         text=dict(lines=["R.I.P.", "ELEANOR", "MARSH", "1858 – 1911"], center=(0.0, 0.70),
                   size=(0.42, 0.40), font=FONT_BOLD),
     ),
     "gravestone_slab_a": dict(
-        kind="stone", size=1024, x=1.2, crack=1.1, moss=0.8, moss_h=0.28,
+        kind="stone", size=1024, x=1.9, crack=1.1, moss=0.8, moss_h=0.28,
         colors=((0.11, 0.12, 0.12), (0.21, 0.21, 0.20)),
         text=dict(lines=["†", "ИВАН", "ПЕТРОВИЧ", "СМОЛИН", "1871 – 1934"], center=(0.0, 0.55),
                   size=(0.50, 0.52), font=FONT_BOLD),
     ),
     "vase_clay_01": dict(
-        kind="clay", size=512, x=2.4, crack=0.7, moss=0.0, moss_h=0.1,
+        kind="clay", size=512, x=4.0, crack=0.7, moss=0.0, moss_h=0.1,
         colors=((0.34, 0.16, 0.08), (0.48, 0.25, 0.13)), text=None,
     ),
     # --- разрушенные (арт-лист: крест, плита, разбитое надгробие, стела): больше трещин и мха, надпись местами утрачена
     "gravestone_cross_broken_a": dict(
-        kind="stone", size=1024, x=-2.4, y=-1.8, crack=1.5, moss=1.0, moss_h=0.42,
+        kind="stone", size=1024, x=-2.85, y=-3.4, crack=1.5, moss=1.0, moss_h=0.42,
         colors=((0.11, 0.11, 0.12), (0.22, 0.21, 0.20)),
         text=dict(lines=["ПОКОЙСЯ"], center=(0.0, 0.30), size=(0.20, 0.06), font=FONT_BOLD),
     ),
     "gravestone_slab_broken_a": dict(
-        kind="stone", size=1024, x=-0.8, y=-1.8, crack=1.6, moss=1.0, moss_h=0.34,
+        kind="stone", size=1024, x=-0.95, y=-3.4, crack=1.6, moss=1.0, moss_h=0.34,
         colors=((0.12, 0.12, 0.12), (0.22, 0.22, 0.21)), text=None,
     ),
     "gravestone_rubble_a": dict(
-        kind="stone", size=1024, x=0.8, y=-1.8, crack=1.7, moss=1.0, moss_h=0.45,
+        kind="stone", size=1024, x=0.95, y=-3.4, crack=1.7, moss=1.0, moss_h=0.45,
         colors=((0.10, 0.10, 0.11), (0.21, 0.20, 0.19)),
         text=dict(lines=["R.I.P."], center=(0.0, 0.26), size=(0.36, 0.10), font=FONT_BOLD),
     ),
     "gravestone_arch_broken_a": dict(
-        kind="stone", size=1024, x=2.4, y=-1.8, crack=1.5, moss=0.9, moss_h=0.36,
+        kind="stone", size=1024, x=2.85, y=-3.4, crack=1.5, moss=0.9, moss_h=0.36,
         colors=((0.12, 0.12, 0.13), (0.23, 0.22, 0.21)),
         text=dict(lines=["R.I.P.", "HENRY", "WELLS"], center=(0.0, 0.52), size=(0.36, 0.30), font=FONT_BOLD),
     ),
     # --- наклонённые (просевшая земля): центр надписи пересчитывается в geometry()
     "gravestone_cross_tilted_a": dict(
-        kind="stone", size=1024, x=-1.6, y=-3.6, crack=1.0, moss=1.0, moss_h=0.38,
+        kind="stone", size=1024, x=-1.9, y=-6.8, crack=1.0, moss=1.0, moss_h=0.38,
         colors=((0.12, 0.12, 0.13), (0.23, 0.22, 0.21)),
         text=dict(lines=["ПОКОЙСЯ С МИРОМ"], center=(0.0, 0.18), size=(0.46, 0.07), font=FONT_BOLD),
     ),
     "gravestone_arch_tilted_a": dict(
-        kind="stone", size=1024, x=0.0, y=-3.6, crack=1.1, moss=0.8, moss_h=0.34,
+        kind="stone", size=1024, x=0.0, y=-6.8, crack=1.1, moss=0.8, moss_h=0.34,
         colors=((0.13, 0.13, 0.14), (0.24, 0.23, 0.22)),
         text=dict(lines=["R.I.P.", "JOHN", "HALE", "1840 – 1902"], center=(0.0, 0.70),
                   size=(0.42, 0.40), font=FONT_BOLD),
     ),
     "gravestone_headstone_tilted_a": dict(
-        kind="stone", size=1024, x=1.6, y=-3.6, crack=1.2, moss=0.9, moss_h=0.34,
+        kind="stone", size=1024, x=1.9, y=-6.8, crack=1.2, moss=0.9, moss_h=0.34,
         colors=((0.11, 0.12, 0.12), (0.21, 0.21, 0.20)),
         text=dict(lines=["†", "АННА", "ИВАНОВА", "1880 – 1925"], center=(0.0, 0.60),
                   size=(0.46, 0.46), font=FONT_BOLD),
@@ -701,6 +702,9 @@ def main():
         paths = bake_prop(objs[n], PROPS[n])
         objs[n].data.materials.clear()
         objs[n].data.materials.append(final_material(f"mat_{n}", paths))
+        if n.startswith("gravestone"):  # камень + закопанная земля — одна модель (холмик не участвует в запекании)
+            import grave_mound_props
+            grave_mound_props.add_mound(objs[n])
         log(n, "baked", {k: os.path.getsize(v) // 1024 for k, v in paths.items()}, "KB")
     for o in objs.values():
         o.hide_render = False
