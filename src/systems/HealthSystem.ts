@@ -26,6 +26,11 @@ export class HealthSystem {
     this.health = Math.max(0, this.health - (amountPerSecond / this.maxHealthMultiplier) * deltaSec);
   }
 
+  /** Бинты/аптечка (InventorySystem) — мгновенно поднимают здоровье, не выше максимума. */
+  heal(amountPercent: number): void {
+    this.health = Math.min(MAX_HEALTH, this.health + amountPercent);
+  }
+
   getHealthPercent(): number {
     return this.health;
   }

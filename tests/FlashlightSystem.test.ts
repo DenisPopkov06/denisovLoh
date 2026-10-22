@@ -19,4 +19,23 @@ describe("FlashlightSystem", () => {
     // Луч почти параллелен взгляду (-Z): угол меньше ~3°.
     expect(beam.dot(new THREE.Vector3(0, 0, -1))).toBeGreaterThan(Math.cos(THREE.MathUtils.degToRad(3)));
   });
+
+  it("the bulb burns out after its lifetime and blocks toggle() until a spare is installed", () => {
+    const flashlight = new FlashlightSystem();
+    flashlight.installBulb(1);
+    flashlight.toggle();
+    expect(flashlight.isOn()).toBe(true);
+
+    flashlight.update(1);
+    expect(flashlight.isBulbBurnedOut()).toBe(true);
+    expect(flashlight.isOn()).toBe(false);
+
+    flashlight.toggle();
+    expect(flashlight.isOn()).toBe(false);
+
+    flashlight.installBulb(60);
+    expect(flashlight.isBulbBurnedOut()).toBe(false);
+    flashlight.toggle();
+    expect(flashlight.isOn()).toBe(true);
+  });
 });

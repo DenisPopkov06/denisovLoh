@@ -78,6 +78,10 @@ type ZombieState = "chase" | "attack" | "dead";
 export class ZombieSystem {
   private active = false;
   private state: ZombieState = "chase";
+  /** Капкан (InventorySystem "trap") — замирает на месте (не идёт, не бьёт) на это
+   *  время; в отличие от kill() не меняет state и анимацию ходьбы не трогает, просто
+   *  останавливает её (freeze кадра) — читается как "застрял", а не "умер". */
+  private stunnedRemainingSec = 0;
   private readonly tmpDirection = new THREE.Vector3();
   private readonly tmpStep = new THREE.Vector3();
   private readonly tmpNextPos = new THREE.Vector3();
@@ -111,6 +115,7 @@ export class ZombieSystem {
     await this.sceneManager.spawnZombie(spawn);
     this.active = true;
     this.state = "chase";
+    this.stunnedRemainingSec = 0;
     this.resetPath();
   }
 
@@ -121,6 +126,7 @@ export class ZombieSystem {
     this.sceneManager.removeZombie();
     this.active = false;
     this.state = "chase";
+    this.stunnedRemainingSec = 0;
     this.resetPath();
     this.meshBlockedCache.clear();
   }
@@ -135,6 +141,17 @@ export class ZombieSystem {
 
   isDead(): boolean {
     return this.state === "dead";
+  }
+
+  /** Капкан сработал: зомби замирает на stunSec, анимация ходьбы останавливается
+   *  (timeScale 0 — не переключаем клип, чтобы не терять текущую фазу шага). */
+  stun(stunSec: number): void {
+    if (!this.active || this.state === "dead") return;
+    this.stunnedRemainingSec = Math.max(this.stunnedRemainingSec, stunSec);
+  }
+
+  isStunned(): boolean {
+    return this.stunnedRemainingSec > 0;
   }
 
   /** Двигает зомби к игроку на один кадр и возвращает дистанцию XZ до него (Infinity,
@@ -159,6 +176,12 @@ export class ZombieSystem {
     if (distance < 1e-4) return distance;
     this.tmpDirection.normalize();
     const yaw = Math.atan2(this.tmpDirection.x, this.tmpDirection.z);
+
+    if (this.stunnedRemainingSec > 0) {
+      this.stunnedRemainingSec = Math.max(0, this.stunnedRemainingSec - deltaSec);
+      this.sceneManager.setZombieAnimationSpeed(0);
+      return distance;
+    }
 
     if (this.state === "chase" && distance <= ATTACK_RANGE) this.state = "attack";
     else if (this.state === "attack" && distance > ATTACK_EXIT_RANGE) this.state = "chase";

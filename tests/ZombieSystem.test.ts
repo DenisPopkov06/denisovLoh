@@ -173,6 +173,29 @@ describe("ZombieSystem", () => {
     expect(zombie.update(0.1, new THREE.Vector3(0, 1.6, 0), ZOMBIE_APPEARS_AT_SHIFT)).toBeLessThan(Infinity);
   });
 
+  it("stun() freezes the zombie in place without killing it, then it resumes chasing", () => {
+    const scene = makeFakeSceneManager();
+    const zombie = new ZombieSystem(scene);
+    scene.position = { x: -5, y: 0, z: 0 };
+    (zombie as unknown as { active: boolean }).active = true;
+    const player = new THREE.Vector3(0, 1.6, 0);
+
+    zombie.stun(0.3);
+    expect(zombie.isStunned()).toBe(true);
+    const distance = zombie.update(0.2, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.position!.x).toBe(-5);
+    expect(distance).toBeLessThan(Infinity);
+    expect(zombie.isDead()).toBe(false);
+
+    // Этот кадр ещё застаёт остаток (0.1с) — замирание снимется только к следующему.
+    zombie.update(0.2, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(zombie.isStunned()).toBe(false);
+    expect(scene.position!.x).toBe(-5);
+
+    zombie.update(0.2, player, ZOMBIE_APPEARS_AT_SHIFT);
+    expect(scene.position!.x).toBeGreaterThan(-5);
+  });
+
   it("moves along Z as well as X (player straight ahead on the Z axis)", () => {
     const scene = makeFakeSceneManager();
     const zombie = new ZombieSystem(scene);

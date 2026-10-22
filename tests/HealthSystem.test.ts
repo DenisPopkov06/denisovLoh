@@ -29,6 +29,15 @@ describe("HealthSystem", () => {
     expect(health.getHealthPercent()).toBe(before);
   });
 
+  it("heal() restores health but never above the max", () => {
+    const health = new HealthSystem();
+    health.damage(50, 1);
+    health.heal(20);
+    expect(health.getHealthPercent()).toBeCloseTo(70, 5);
+    health.heal(1000);
+    expect(health.getHealthPercent()).toBe(100);
+  });
+
   it("reset() restores full health", () => {
     const health = new HealthSystem();
     health.damage(1000, 1);

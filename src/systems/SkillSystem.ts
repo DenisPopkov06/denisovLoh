@@ -1,7 +1,7 @@
 /** Прокачка навыков (магазин у дома, ShopScreen): у каждого навыка уровни 0..MAX,
  *  цена следующего уровня растёт линейно, эффект — процент за уровень к базовому
  *  значению соответствующей системы (см. Game.applySkillEffects). */
-export type SkillId = "run" | "jump" | "flashlight" | "health" | "stamina" | "lockpick";
+export type SkillId = "run" | "jump" | "flashlight" | "health" | "stamina" | "repair";
 
 export interface SkillDefinition {
   id: SkillId;
@@ -21,14 +21,18 @@ export const SKILLS: readonly SkillDefinition[] = [
   { id: "flashlight", title: "Фонарь", description: "Длительность работы увеличивается на 20%", percentPerLevel: 20, baseCost: 200, costPerLevel: 100 },
   { id: "health", title: "Здоровье", description: "Макс. здоровье увеличивается на 20%", percentPerLevel: 20, baseCost: 700, costPerLevel: 150 },
   { id: "stamina", title: "Выносливость", description: "Восстанавливается быстрее на 15%", percentPerLevel: 15, baseCost: 300, costPerLevel: 100 },
-  // Замков в игре пока нет — "взлом" ускоряет всё, что делается удержанием E (ремонт).
-  { id: "lockpick", title: "Взлом", description: "Работа с удержанием E быстрее на 25%", percentPerLevel: 25, baseCost: 800, costPerLevel: 150 },
+  // Заменяет прежний "Взлом" (замков в игре нет) — тот же workSpeedMultiplier в
+  // InteractionSystem, но осмысленно: ускоряет ремонт надгробий лопатой и будущие
+  // раскопки ям, то есть всё, что делается удержанием E. Сам по себе прогресс виден
+  // через полосу ремонта в HUD (InteractionSystem.getRepairProgress) — выше уровень
+  // навыка, быстрее идёт её заполнение.
+  { id: "repair", title: "Ремонт", description: "Ремонт и раскопки лопатой быстрее на 25%", percentPerLevel: 25, baseCost: 800, costPerLevel: 150 },
 ];
 
 export type SkillLevels = Record<SkillId, number>;
 
 function emptyLevels(): SkillLevels {
-  return { run: 0, jump: 0, flashlight: 0, health: 0, stamina: 0, lockpick: 0 };
+  return { run: 0, jump: 0, flashlight: 0, health: 0, stamina: 0, repair: 0 };
 }
 
 function definition(id: SkillId): SkillDefinition {

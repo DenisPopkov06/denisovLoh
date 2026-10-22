@@ -535,6 +535,7 @@ export class SceneManager {
     this.animationMixers.clear();
     this.currentZoneId = null;
     this.currentLayout = null;
+    this.traps.clear();
   }
 
   getObjectByInstanceId(instanceId: string): THREE.Object3D | undefined {
@@ -976,5 +977,52 @@ export class SceneManager {
     this.zombieWalkTimeScale = timeScale;
     const walk = this.zombieActions.get("walk");
     if (walk) walk.timeScale = ZOMBIE_WALK_CLIP_TIME_SCALE * timeScale;
+  }
+
+  // --- Капкан (предмет "Капкан", InventorySystem) -----------------------------
+  // Процедурная геометрия (без внешних ассетов — public/models не трогаем): низкая
+  // база и две "челюсти"-конуса, тёмный металл. ZombieSystem.stun() вызывается из
+  // Game.updateZombie(), когда зомби оказывается достаточно близко к одной из них.
+
+  private readonly traps = new Map<string, THREE.Object3D>();
+  private trapCounter = 0;
+
+  /** Ставит капкан у ног игрока и возвращает его id (removeTrap/getActiveTraps). */
+  placeTrap(position: Vec3): string {
+    const material = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, metalness: 0.75, roughness: 0.35 });
+    const group = new THREE.Group();
+
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.02, 16), material);
+    group.add(base);
+    for (const side of [-1, 1] as const) {
+      const jaw = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.24, 6), material);
+      jaw.position.set(side * 0.1, 0.09, 0);
+      jaw.rotation.z = side * (Math.PI / 5);
+      group.add(jaw);
+    }
+    group.position.set(position.x, position.y, position.z);
+    group.traverse((node) => {
+      if (node instanceof THREE.Mesh) node.castShadow = true;
+    });
+    this.zoneRoot?.add(group);
+
+    const id = `trap-${this.trapCounter++}`;
+    this.traps.set(id, group);
+    return id;
+  }
+
+  /** Срабатывание (зомби задел капкан) или истёк срок — убирает его со сцены. */
+  removeTrap(id: string): void {
+    const trap = this.traps.get(id);
+    if (!trap) return;
+    trap.removeFromParent();
+    disposeObject(trap);
+    this.traps.delete(id);
+  }
+
+  /** Позиции расставленных капканов — ZombieSystem/Game сверяет с ними дистанцию
+   *  до зомби каждый кадр, не зная о THREE-объектах капкана вообще. */
+  getActiveTraps(): { id: string; x: number; z: number }[] {
+    return Array.from(this.traps.entries()).map(([id, group]) => ({ id, x: group.position.x, z: group.position.z }));
   }
 }

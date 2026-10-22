@@ -4,6 +4,11 @@ import * as THREE from "three";
 const FLASHLIGHT_HAND_OFFSET = { x: 0.15, y: -0.2 };
 // На каком расстоянии по линии взгляда центр луча сходится с прицелом.
 const FLASHLIGHT_AIM_DISTANCE = 20;
+// Срок службы лампы (предмет "Запасной фонарик", InventorySystem) — отдельный от
+// заряда (chargePercent) ресурс: тает только пока фонарик включён, не восстанавливается
+// подзарядом, и не связан с навыком "Фонарь" (тот лишь замедляет расход chargePercent).
+// Перегоревшую лампу чинит только покупка нового фонарика — см. Game.update().
+const INITIAL_BULB_SECONDS = 240;
 
 export class FlashlightSystem {
   readonly light: THREE.SpotLight;
@@ -12,6 +17,8 @@ export class FlashlightSystem {
   private on = false;
   /** Навык "Фонарь": во сколько раз дольше держится заряд (расход делится на него). */
   private durationMultiplier = 1;
+  private bulbSecondsLeft = INITIAL_BULB_SECONDS;
+  private bulbBurnedOut = false;
 
   constructor(
     private readonly drainPerSecond = 2,
@@ -45,6 +52,7 @@ export class FlashlightSystem {
   }
 
   toggle(): void {
+    if (this.bulbBurnedOut) return;
     if (!this.on && this.chargePercent <= 0) return;
     this.on = !this.on;
     this.light.visible = this.on;
@@ -56,9 +64,11 @@ export class FlashlightSystem {
   update(deltaSec: number): void {
     if (this.on) {
       this.chargePercent = Math.max(0, this.chargePercent - (this.drainPerSecond / this.durationMultiplier) * deltaSec);
-      if (this.chargePercent === 0) {
+      this.bulbSecondsLeft = Math.max(0, this.bulbSecondsLeft - deltaSec);
+      if (this.chargePercent === 0 || this.bulbSecondsLeft === 0) {
         this.on = false;
         this.light.visible = false;
+        if (this.bulbSecondsLeft === 0) this.bulbBurnedOut = true;
       }
     } else {
       this.chargePercent = Math.min(100, this.chargePercent + this.rechargePerSecond * deltaSec);
@@ -71,5 +81,16 @@ export class FlashlightSystem {
 
   isOn(): boolean {
     return this.on;
+  }
+
+  isBulbBurnedOut(): boolean {
+    return this.bulbBurnedOut;
+  }
+
+  /** Предмет "Запасной фонарик" (InventorySystem) — вставляет лампу с заданным
+   *  запасом свечения в секундах и сразу снимает "перегорела". */
+  installBulb(seconds: number): void {
+    this.bulbSecondsLeft = Math.max(0, seconds);
+    this.bulbBurnedOut = this.bulbSecondsLeft <= 0;
   }
 }

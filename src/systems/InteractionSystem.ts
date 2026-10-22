@@ -40,7 +40,8 @@ export class InteractionSystem {
 
   private repairingInstanceId: string | null = null;
   private repairRemainingSec = 0;
-  /** Навык "Взлом": во сколько раз быстрее идут действия с удержанием E. */
+  private repairTotalSec = 0;
+  /** Навык "Ремонт": во сколько раз быстрее идут действия с удержанием E. */
   private workSpeedMultiplier = 1;
 
   private carriedObject: THREE.Object3D | null = null;
@@ -51,6 +52,12 @@ export class InteractionSystem {
     private readonly stateMachine: ObjectStateMachine,
     private readonly shiftManager: ShiftManager,
     private readonly sceneManager: SceneManager,
+    /** Предмет "Лопата" (InventorySystem) — без неё ремонт/раскопки BROKEN/FALLEN
+     *  не начинаются вовсе (см. interact()/getInteractionPrompt()). */
+    private readonly hasShovel: () => boolean = () => true,
+    /** Вызывается ровно раз на каждый завершённый ремонт — Game.ts списывает
+     *  1 использование лопаты (InventorySystem.consume). */
+    private readonly onRepairCompleted: () => void = () => {},
   ) {}
 
   setWorkSpeedMultiplier(multiplier: number): void {
@@ -118,9 +125,11 @@ export class InteractionSystem {
       state === ObjectState.BROKEN ||
       (state === ObjectState.FALLEN && this.sceneManager.isFallenLikeBroken(instanceId));
     if (needsTimedRepair) {
+      if (!this.hasShovel()) return;
       const task = this.shiftManager.getCurrentConfig()?.tasks.find((t) => t.instanceId === instanceId);
       this.repairingInstanceId = instanceId;
-      this.repairRemainingSec = task?.repairTimeSec ?? DEFAULT_REPAIR_SEC;
+      this.repairTotalSec = task?.repairTimeSec ?? DEFAULT_REPAIR_SEC;
+      this.repairRemainingSec = this.repairTotalSec;
       return;
     }
 
@@ -131,9 +140,10 @@ export class InteractionSystem {
     return this.focusedRoot;
   }
 
-  getRepairProgress(): { instanceId: string; remainingSec: number } | null {
+  getRepairProgress(): { instanceId: string; remainingSec: number; percent: number } | null {
     if (!this.repairingInstanceId) return null;
-    return { instanceId: this.repairingInstanceId, remainingSec: this.repairRemainingSec };
+    const percent = this.repairTotalSec > 0 ? 1 - this.repairRemainingSec / this.repairTotalSec : 0;
+    return { instanceId: this.repairingInstanceId, remainingSec: this.repairRemainingSec, percent };
   }
 
   /** Текст подсказки под прицелом — что сделает E прямо сейчас (или null, если нечего). */
@@ -152,9 +162,10 @@ export class InteractionSystem {
       case ObjectState.MISSING:
         return "E — поднять";
       case ObjectState.BROKEN:
-        return "Удерживайте E — починить";
+        return this.hasShovel() ? "Удерживайте E — починить" : "Нужна лопата";
       case ObjectState.FALLEN:
-        return this.sceneManager.isFallenLikeBroken(instanceId) ? "Удерживайте E — починить" : "E — поправить";
+        if (!this.sceneManager.isFallenLikeBroken(instanceId)) return "E — поправить";
+        return this.hasShovel() ? "Удерживайте E — починить" : "Нужна лопата";
       default:
         return "E — поправить";
     }
@@ -232,6 +243,7 @@ export class InteractionSystem {
   private completeRepair(): void {
     if (this.repairingInstanceId) {
       this.stateMachine.transition(this.repairingInstanceId, ObjectState.NORMAL);
+      this.onRepairCompleted();
     }
     this.cancelRepair();
   }
@@ -239,6 +251,7 @@ export class InteractionSystem {
   private cancelRepair(): void {
     this.repairingInstanceId = null;
     this.repairRemainingSec = 0;
+    this.repairTotalSec = 0;
   }
 
   private findInteractableRoot(
