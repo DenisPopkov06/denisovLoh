@@ -19,6 +19,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import bake_props  # noqa: E402  (render_text_mask, TMP, FONT_BOLD)
+import grave_mound as GMD  # noqa: E402  (форма холмика у надгробия — общая с zone_lib)
 
 TEX_DIR = bake_props.TEX_DIR
 os.makedirs(TEX_DIR, exist_ok=True)
@@ -207,25 +208,21 @@ def ground_unique():
     weeds = sstep(1.1, 0.0, inside) * (0.55 + 0.45 * n01(field(0.45, 114), 0.3))
     col = col * (1 - 0.45 * weeds[..., None]) + np.array((0.055, 0.105, 0.04)) * 0.45 * weeds[..., None]
 
-    # --- холмики перед надгробиями (по layout.json): земля, редкие всходы
-    graves = [o for o in json.load(open(LAYOUT, encoding="utf-8"))["objects"] if o["objectId"].startswith("gravestone")]
+    # --- холмики перед надгробиями (по layout.json): земля, редкие всходы. Форма — та же функция, что строит геометрию
+    # холмика (grave_mound.height): пятно грунта ложится ровно на меш, голова уходит под цоколь надгробия
+    graves = GMD.graves_from_layout(json.load(open(LAYOUT, encoding="utf-8"))["objects"])
     mound_m = np.zeros((GN, GN), np.float32)
-    edge_n, mound_tone, sprout = field(0.35, 130), field(0.12, 131, 1.6), field(0.1, 132, 1.6)
-    for o in graves:
-        gx, gy = o["position"]["x"], -o["position"]["z"]
-        a = math.radians(o["rotationY"])
-        fx, fy = math.sin(a), -math.cos(a)           # куда «смотрит» надгробие (Blender: y = -z)
+    mound_tone, sprout = field(0.12, 131, 1.6), field(0.1, 132, 1.6)
+    for gx, gy, fx, fy, wh in graves:
         cx, cy = gx + fx * 1.05, gy + fy * 1.05
         sy, sx, wx, wy = window(cx, cy, 1.6)
-        u = (wx - cx) * fx + (wy - cy) * fy
-        v = -(wx - cx) * fy + (wy - cy) * fx
-        d = (np.abs(u) / 0.98) ** 2.6 + (np.abs(v) / 0.44) ** 2.6 - 1 + 0.30 * edge_n[sy, sx]
-        mound_m[sy, sx] = np.maximum(mound_m[sy, sx], 1 - sstep(-0.25, 0.20, d))
+        u, v = GMD.to_local(wx, wy, gx, gy, fx, fy)
+        mound_m[sy, sx] = np.maximum(mound_m[sy, sx], sstep(0.0, 0.016, GMD.height(u, v, wh)))
     mcol = lerp((0.20, 0.15, 0.095), (0.30, 0.225, 0.14), n01(mound_tone, 0.3))
     spr = sstep(0.62, 0.74, n01(sprout, 0.3))[..., None]
     mcol = mcol * (1 - 0.7 * spr) + np.array((0.12, 0.19, 0.07)) * 0.7 * spr
     col = col * (1 - 0.88 * mound_m[..., None]) + mcol * 0.88 * mound_m[..., None]
-    height += 0.05 * mound_m
+    height += 0.04 * mound_m
 
     # --- утоптанный двор у дома и пятно у основания креста
     x0, x1, y0, y1 = YARD
