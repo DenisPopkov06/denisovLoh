@@ -483,6 +483,20 @@ def tile_metal(n=256):
     return save_set("tile_metal", col, h, 0.55 + 0.35 * rust, 0.9 + 0.0 * h, 3.0, metal=0.85 - 0.75 * rust)
 
 
+def tile_gunmetal(n=256):
+    """Воронёная оружейная сталь (пистолет): тёмный сине-серый тон, мелкие светлые царапины и потёртости, без ржавчины."""
+    base = n01(pnoise(n, 2.4, seed=181), 0.25)
+    col = lerp((0.13, 0.14, 0.165), (0.21, 0.22, 0.25), base)
+    scratch = sstep(0.74, 0.84, n01(pnoise(n, 1.6, aniso=(6, 1), seed=182), 0.3))      # длинные царапины вдоль ствола
+    scuff = sstep(0.80, 0.90, n01(pnoise(n, 1.0, seed=183), 0.3))                       # потёртости до металла
+    col = col * (1 - 0.45 * scratch[..., None]) + np.array((0.30, 0.31, 0.33)) * 0.45 * scratch[..., None]
+    col = col * (1 - 0.55 * scuff[..., None]) + np.array((0.38, 0.39, 0.41)) * 0.55 * scuff[..., None]
+    h = 0.5 + 0.05 * pnoise(n, 1.2, seed=184) - 0.18 * scratch
+    # металличность умеренная (0.5): в сцене нет карты окружения, полностью «металлический» материал выглядел бы чёрным
+    return save_set("tile_gunmetal", col, h, 0.45 + 0.25 * scuff + 0.1 * scratch, 0.95 + 0.0 * h, 2.5,
+                    metal=0.50 - 0.15 * scuff)
+
+
 def tile_leaves(n=512, count=1100):
     """Листва для крон: сотни листьев разного оттенка поверх тёмной глубины кроны (бесшовно)."""
     rng = np.random.default_rng(111)
@@ -563,7 +577,8 @@ if __name__ == "__main__":
     wood_alb, wood_col = tile_wood()
     bark = tile_bark()
     stone = tile_stone()
-    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay()]
+    v2 = [tile_planks(), tile_shingles(), tile_stone_wall(), tile_cobble(), tile_metal(), tile_leaves(), tile_clay(),
+          tile_gunmetal()]
     sign_texture(wood_col)
     contact_sheet([ground, grass_outer, wood_alb, bark, stone] + v2)
     print("NK: done", flush=True)
