@@ -17,13 +17,15 @@ import { ZombieSystem } from "@/systems/ZombieSystem";
 import { SaveSystem, type SaveData } from "@/systems/SaveSystem";
 import { SkillSystem, SKILLS, type SkillId } from "@/systems/SkillSystem";
 import { WalletSystem, TASK_REWARD, shiftCompletionBonus } from "@/systems/WalletSystem";
+import { InventorySystem, ITEMS, type ItemId } from "@/systems/InventorySystem";
 import { trackEvent } from "@/sdk/Analytics";
 import { showFullscreenAd } from "@/sdk/Ads";
-import { HUD, type HUDTask } from "@/ui/HUD";
+import { HUD, type HUDTask, type HUDHotbarItem } from "@/ui/HUD";
 import { formatTaskLabel } from "@/ui/taskLabels";
 import { ShiftReportScreen } from "@/ui/ShiftReportScreen";
 import { PauseMenu } from "@/ui/PauseMenu";
 import { ShopScreen, type ShopState } from "@/ui/ShopScreen";
+import { WinScreen } from "@/ui/WinScreen";
 import { createPostProcessing, type PostProcessingPipeline } from "@/render/PostProcessing";
 
 const SPRINT_SPEED_MULTIPLIER = 1.6;
@@ -32,6 +34,31 @@ const SHOP_RADIUS = 2.8;
 // Пока открыт магазин, камера смотрит от двери на кладбище (фон как на референсе),
 // почти горизонтально — за панелями видны деревья, фонарь и небо. При закрытии возвращается прежний взгляд.
 const SHOP_VIEW_PITCH = 0.02;
+// Хотбар предметов (HUD) — у каждого расходуемого предмета своя клавиша; лопата и
+// запасной фонарик сюда не входят — это не "активируемые" предметы, лопата тратится
+// сама при ремонте (InteractionSystem), фонарик меняется сам при перегорании (см.
+// updateFlashlightBulb). Пистолет и капкан физически не расходуются мгновенно по
+// нажатию клавиши-use как бинты/аптечка, но жмутся тем же единым способом — выстрел/
+// установка — поэтому тоже в хотбаре.
+const HOTBAR_ITEMS: readonly { id: ItemId; hotkey: string }[] = [
+  { id: "bandage", hotkey: "1" },
+  { id: "medkit", hotkey: "2" },
+  { id: "trap", hotkey: "3" },
+  { id: "pistol", hotkey: "4" },
+  { id: "key", hotkey: "5" },
+];
+const BANDAGE_HEAL_PERCENT = 30;
+const MEDKIT_HEAL_PERCENT = 100;
+// Капкан: радиус, на котором зомби задевает его (чуть больше ZOMBIE_RADIUS в
+// ZombieSystem, но тот модуль не экспортирует эту константу — независимое число
+// того же порядка), и на сколько секунд это его замирает (stun()).
+const TRAP_TRIGGER_RADIUS = 0.5;
+const TRAP_STUN_SEC = 4;
+// Пистолет: дальность выстрела и половина угла конуса прицеливания от направления
+// взгляда — попадание не требует попадания луча в меш (нет видимого оружия/отдачи
+// от геометрии), только "смотришь примерно на зомби и он не дальше, чем в комнате".
+const PISTOL_RANGE = 14;
+const PISTOL_AIM_CONE_RAD = Math.PI / 15; // 12°
 
 export class Game {
   private readonly renderer: THREE.WebGLRenderer;
@@ -53,6 +80,7 @@ export class Game {
   private readonly saveSystem = new SaveSystem();
   private readonly skills = new SkillSystem();
   private readonly wallet = new WalletSystem();
+  private readonly inventory = new InventorySystem();
   /** Записи сохранения идут строго по очереди: каждая читает текущее сохранение и
    *  дописывает своё поле — параллельно они затирали бы друг друга. */
   private saveQueue: Promise<void> = Promise.resolve();
@@ -61,6 +89,7 @@ export class Game {
   private readonly shiftReportScreen: ShiftReportScreen;
   private readonly pauseMenu: PauseMenu;
   private readonly shopScreen: ShopScreen;
+  private readonly winScreen: WinScreen;
   private readonly postProcessing: PostProcessingPipeline;
 
   private running = false;
@@ -101,6 +130,11 @@ export class Game {
       this.stateMachine,
       this.shiftManager,
       this.sceneManager,
+      () => this.inventory.getRemaining("shovel") > 0,
+      () => {
+        this.inventory.consume("shovel", 1);
+        this.persistEconomy();
+      },
     );
     this.hintSystem = new HintSystem(this.sceneManager.scene);
     this.flashlight.attachToCamera(this.camera);
@@ -119,11 +153,14 @@ export class Game {
       uiRoot,
       (id) => this.buySkill(id),
       () => this.closeShop(),
+      (id) => this.buyItem(id),
     );
+    this.winScreen = new WinScreen(uiRoot, () => window.location.reload());
 
     void this.saveSystem.load().then((data) => {
       this.wallet.load(data.coins);
       this.skills.load(data.skills);
+      this.inventory.load(data.itemStock, data.itemPurchases);
       this.applySkillEffects();
     });
 
@@ -160,6 +197,10 @@ export class Game {
   };
 
   private update(deltaSec: number): void {
+    // Концовка (использован "Ключ") — финал, дальше игра не обновляется вовсе,
+    // restart() на WinScreen перезагружает страницу (см. конструктор).
+    if (this.winScreen.isVisible()) return;
+
     // Пока открыт экран итогов смены — Escape не должен открывать поверх него паузу,
     // там и так уже всё остановлено, а курсор специально отпущен под клик по кнопке.
     if (!this.shiftReportScreen.isVisible() && this.input.consumeKeyPress("Escape")) {
@@ -187,6 +228,7 @@ export class Game {
         this.sceneManager.getCollisionRects(),
       );
       this.flashlight.update(deltaSec);
+      this.updateFlashlightBulb();
       this.hintSystem.update(deltaSec);
       this.sceneManager.updateAnimations(deltaSec);
       this.updateZombie(deltaSec);
@@ -200,6 +242,11 @@ export class Game {
         if (this.canOpenShop()) this.openShop();
         else this.interaction.interact();
       }
+      if (this.input.consumeKeyPress("Digit1")) this.useBandage();
+      if (this.input.consumeKeyPress("Digit2")) this.useMedkit();
+      if (this.input.consumeKeyPress("Digit3")) this.deployTrap();
+      if (this.input.consumeKeyPress("Digit4")) this.firePistol();
+      if (this.input.consumeKeyPress("Digit5")) this.useKey();
     }
 
     this.hud.update({
@@ -209,6 +256,8 @@ export class Game {
       remainingSec: this.clock.getShiftRemainingSec(),
       tasks: this.buildHudTasks(),
       interactionPrompt: this.interaction.getInteractionPrompt(),
+      repairProgressPercent: this.interaction.getRepairProgress()?.percent ?? null,
+      hotbar: this.buildHotbar(),
       // Пока открыт экран (пауза/итоги) — подсказка про захват курсора неуместна,
       // хоть курсор формально и не захвачен.
       pointerLocked:
@@ -277,12 +326,101 @@ export class Game {
     this.persistEconomy();
   }
 
+  private buyItem(id: ItemId): void {
+    const cost = this.inventory.getNextCost(id);
+    if (cost === null || !this.wallet.trySpend(cost)) return;
+    this.inventory.grant(id);
+    this.shopScreen.update(this.buildShopState());
+    trackEvent({ name: "item_buy", item: id });
+    this.persistEconomy();
+  }
+
   private buildShopState(): ShopState {
     const skills = {} as ShopState["skills"];
     for (const skill of SKILLS) {
       skills[skill.id] = { level: this.skills.getLevel(skill.id), cost: this.skills.getUpgradeCost(skill.id) };
     }
-    return { coins: this.wallet.getCoins(), skills };
+    const items = {} as ShopState["items"];
+    for (const item of ITEMS) {
+      items[item.id] = { remaining: this.inventory.getRemaining(item.id), cost: this.inventory.getNextCost(item.id) };
+    }
+    return { coins: this.wallet.getCoins(), skills, items };
+  }
+
+  private buildHotbar(): HUDHotbarItem[] {
+    return HOTBAR_ITEMS.map(({ id, hotkey }) => ({ id, hotkey, remaining: this.inventory.getRemaining(id) }));
+  }
+
+  /** Лампа фонарика (FlashlightSystem) перегорела — тратит весь запас "Запасного
+   *  фонарика" (InventorySystem) на новую. Не тратится частями: проще и честнее
+   *  "поставил один новый" на весь оставшийся запас, чем дробить по секундам. */
+  private updateFlashlightBulb(): void {
+    if (!this.flashlight.isBulbBurnedOut()) return;
+    const spareSeconds = this.inventory.getRemaining("spareBulb");
+    if (spareSeconds <= 0) return;
+    this.inventory.consume("spareBulb", spareSeconds);
+    this.flashlight.installBulb(spareSeconds);
+    this.persistEconomy();
+  }
+
+  private useBandage(): void {
+    if (!this.inventory.consume("bandage", 1)) return;
+    this.health.heal(BANDAGE_HEAL_PERCENT);
+    this.persistEconomy();
+  }
+
+  private useMedkit(): void {
+    if (!this.inventory.consume("medkit", 1)) return;
+    this.health.heal(MEDKIT_HEAL_PERCENT);
+    this.persistEconomy();
+  }
+
+  private deployTrap(): void {
+    if (!this.inventory.consume("trap", 1)) return;
+    const { x, y, z } = this.camera.position;
+    // Камера стоит на высоте глаз — капкан кладём на землю под ногами (тот же приём,
+    // что при спавне зомби, см. ZombieSystem.findSpawnPosition).
+    this.sceneManager.placeTrap({ x, y: y - 1.6, z });
+    this.persistEconomy();
+  }
+
+  /** Пистолет — не требует попадания луча в геометрию (нет видимой модели оружия):
+   *  зомби засчитывается целью, если он активен, жив, не дальше PISTOL_RANGE и в
+   *  пределах узкого конуса от направления взгляда. */
+  private firePistol(): void {
+    if (this.inventory.getRemaining("pistol") <= 0) return;
+    if (!this.zombie.isActive() || this.zombie.isDead()) return;
+    const zombiePos = this.sceneManager.getZombiePosition();
+    if (!zombiePos) return;
+
+    const dx = zombiePos.x - this.camera.position.x;
+    const dz = zombiePos.z - this.camera.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > PISTOL_RANGE || distance < 1e-4) return;
+
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    const flatForward = new THREE.Vector3(forward.x, 0, forward.z).normalize();
+    const toZombie = new THREE.Vector3(dx, 0, dz).normalize();
+    if (flatForward.dot(toZombie) < Math.cos(PISTOL_AIM_CONE_RAD)) return;
+
+    this.inventory.consume("pistol", 1);
+    this.zombie.kill();
+    this.hud.showHitMarker();
+    trackEvent({ name: "pistol_shot" });
+    this.persistEconomy();
+  }
+
+  /** Концовка игры — единственная сейчас: WinScreen.show() замораживает update()
+   *  (см. начало update()), кнопка там перезапускает страницу. */
+  private useKey(): void {
+    if (!this.inventory.consume("key", 1)) return;
+    this.clock.pause();
+    this.input.exitPointerLock();
+    this.hud.setHidden(true);
+    this.winScreen.show();
+    trackEvent({ name: "game_won" });
+    this.persistEconomy();
   }
 
   /** Множители навыков в системы (бег — прямо в Game.update через скорость). */
@@ -291,7 +429,7 @@ export class Game {
     this.flashlight.setDurationMultiplier(this.skills.getMultiplier("flashlight"));
     this.health.setMaxHealthMultiplier(this.skills.getMultiplier("health"));
     this.stamina.setRegenMultiplier(this.skills.getMultiplier("stamina"));
-    this.interaction.setWorkSpeedMultiplier(this.skills.getMultiplier("lockpick"));
+    this.interaction.setWorkSpeedMultiplier(this.skills.getMultiplier("repair"));
   }
 
   private onTaskCompleted(): void {
@@ -300,11 +438,27 @@ export class Game {
     this.persistEconomy();
   }
 
+  /** Капкан (предмет "Капкан", InventorySystem/SceneManager.placeTrap) — зомби,
+   *  оказавшийся в TRAP_TRIGGER_RADIUS от него, замирает (ZombieSystem.stun), капкан
+   *  одноразовый и сразу убирается со сцены. */
+  private checkTraps(): void {
+    const zombiePos = this.sceneManager.getZombiePosition();
+    if (!zombiePos) return;
+    for (const trap of this.sceneManager.getActiveTraps()) {
+      const distance = Math.hypot(zombiePos.x - trap.x, zombiePos.z - trap.z);
+      if (distance <= TRAP_TRIGGER_RADIUS) {
+        this.zombie.stun(TRAP_STUN_SEC);
+        this.sceneManager.removeTrap(trap.id);
+      }
+    }
+  }
+
   /** Двигает зомби к игроку (если он уже появился — см. startShift) и снимает жизни,
    *  если подошёл слишком близко; при полном исчерпании жизней проваливает смену
    *  тем же путём, что и исчерпание времени (ShiftManager.failShift). */
   private updateZombie(deltaSec: number): void {
     if (!this.zombie.isActive()) return;
+    this.checkTraps();
 
     const activeShiftIndex = this.shiftManager.getCurrentConfig()?.shiftIndex ?? ZOMBIE_APPEARS_AT_SHIFT;
     const distance = this.zombie.update(
@@ -451,7 +605,12 @@ export class Game {
   }
 
   private persistEconomy(): void {
-    this.persist({ coins: this.wallet.getCoins(), skills: this.skills.getLevels() });
+    this.persist({
+      coins: this.wallet.getCoins(),
+      skills: this.skills.getLevels(),
+      itemStock: this.inventory.getStock(),
+      itemPurchases: this.inventory.getPurchaseCounts(),
+    });
   }
 
   private persist(patch: Partial<SaveData>): void {
