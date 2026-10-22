@@ -2,7 +2,8 @@
 
 Куда игра поставит (перемешает, подвинет, подменит вариантом) надгробие — туда уедет и холмик; в модели зоны
 и на карте земли холмиков нет. Форма — grave_mound.py; материал — бесшовный тайл tile_soil (zone_textures.tile_soil).
-Холмик — второй материал той же модели (primitive), камень остаётся с запечённым атласом; origin и «перед» (−Y Blender =
+Холмик — второй материал той же модели (primitive; материал помечен extras nk_highlight = "earth" — игра подсвечивает
+землю и камень по отдельности), камень остаётся с запечённым атласом; origin и «перед» (−Y Blender =
 +Z glTF) те же, что у камня, холмик вытянут вперёд от лицевой грани.
 
 Работает с props_cemetery.blend (его пишет bake_props.py — там add_mound() вызывается после запекания, так что
@@ -30,6 +31,9 @@ TEX = os.path.join(REPO, "assets_src", "textures_src")
 OUT_DIR = os.path.join(REPO, "public", "models", "props")
 PROPS_BLEND = os.path.join(HERE, "props_cemetery.blend")
 SOIL_MAT = "mat_tile_soil"
+# extras материала → material.userData в three.js: InteractionSystem подсвечивает землю и камень ПО ОТДЕЛЬНОСТИ
+# (меши с этим тегом — отдельная часть объекта; взаимодействие с надгробием остаётся целиком)
+HIGHLIGHT_KEY, HIGHLIGHT_PART = "nk_highlight", "earth"
 SOIL_TILE_M = 0.9           # бесшовный тайл земли повторяется каждые 0.9 м
 NU, NV = 22, 10             # срезов вдоль холмика и ячеек поперёк
 
@@ -44,10 +48,11 @@ def soil_material():
     """Материал земли: PBR из tile_soil_albedo/normal/orm.jpg (те же узлы, что у остальных тайлов зоны).
     Уже созданный переиспользуется (пересоздание оставило бы пустые слоты у мешей, где он уже стоит)."""
     mat = bpy.data.materials.get(SOIL_MAT)
-    if mat is not None:
-        return mat
-    import zone_lib as Z
-    return Z.tile_material(SOIL_MAT, "tile_soil")
+    if mat is None:
+        import zone_lib as Z
+        mat = Z.tile_material(SOIL_MAT, "tile_soil")
+    mat[HIGHLIGHT_KEY] = HIGHLIGHT_PART
+    return mat
 
 
 def build_mound(bm, mat_index):
