@@ -1,7 +1,8 @@
 """Земляной холмик внутри моделей надгробий: камень + земля — ОДНА сущность (один .glb, один узел).
 
 Куда игра поставит (перемешает, подвинет, подменит вариантом) надгробие — туда уедет и холмик; в модели зоны
-и на карте земли холмиков нет. Форма — grave_mound.py; материал — бесшовный тайл tile_soil (zone_textures.tile_soil).
+и на карте земли холмиков нет. Вид — прежний (grave_mound.py): низкий неровный эллипсоид с мягким бурым пятном грунта
+(текстура grave_mound_*.jpg вырезана из старой карты земли — grave_mound_texture.py).
 Холмик — второй материал той же модели (primitive; материал помечен extras nk_highlight = "earth" — игра подсвечивает
 землю и камень по отдельности), камень остаётся с запечённым атласом; origin и «перед» (−Y Blender =
 +Z glTF) те же, что у камня, холмик вытянут вперёд от лицевой грани.
@@ -14,12 +15,13 @@
     GP.open_props()                      # 1) открыть props_cemetery.blend (в своём вызове)
     GP.export_all(save=True)             # 2) холмик во все надгробия → public/models/props/gravestone_*.glb
 """
-import math
 import os
+import random
 import sys
 
 import bmesh
 import bpy
+from mathutils import Matrix, Vector
 
 HERE = os.environ.get("NK_ASSETS", os.path.dirname(os.path.abspath(__file__)))
 if HERE not in sys.path:
@@ -30,12 +32,10 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 TEX = os.path.join(REPO, "assets_src", "textures_src")
 OUT_DIR = os.path.join(REPO, "public", "models", "props")
 PROPS_BLEND = os.path.join(HERE, "props_cemetery.blend")
-SOIL_MAT = "mat_tile_soil"
+SOIL_MAT = "mat_grave_mound"
 # extras материала → material.userData в three.js: InteractionSystem подсвечивает землю и камень ПО ОТДЕЛЬНОСТИ
 # (меши с этим тегом — отдельная часть объекта; взаимодействие с надгробием остаётся целиком)
 HIGHLIGHT_KEY, HIGHLIGHT_PART = "nk_highlight", "earth"
-SOIL_TILE_M = 0.9           # бесшовный тайл земли повторяется каждые 0.9 м
-NU, NV = 22, 10             # срезов вдоль холмика и ячеек поперёк
 
 GRAVESTONES = [
     "gravestone_cross_a", "gravestone_arch_a", "gravestone_slab_a",
@@ -45,41 +45,36 @@ GRAVESTONES = [
 
 
 def soil_material():
-    """Материал земли: PBR из tile_soil_albedo/normal/orm.jpg (те же узлы, что у остальных тайлов зоны).
+    """Материал земли: PBR из grave_mound_albedo/normal/orm.jpg (те же узлы, что у тайлов зоны).
     Уже созданный переиспользуется (пересоздание оставило бы пустые слоты у мешей, где он уже стоит)."""
     mat = bpy.data.materials.get(SOIL_MAT)
     if mat is None:
         import zone_lib as Z
-        mat = Z.tile_material(SOIL_MAT, "tile_soil")
+        mat = Z.tile_material(SOIL_MAT, "grave_mound")
     mat[HIGHLIGHT_KEY] = HIGHLIGHT_PART
     return mat
 
 
 def build_mound(bm, mat_index):
-    """Добавляет в bm поверхность холмика в координатах модели: х — вправо, −у — вперёд (к лицу), z — вверх."""
-    def at(u, v):
-        z = float(GM.height(u, v)) - GM.EMBED                # край утоплен под землю
-        return bm.verts.new((v, -u, z))
-
-    us = [GM.U_BACK + (GM.U_FOOT - GM.U_BACK) * (1 - math.cos(math.pi * i / NU)) / 2 for i in range(NU + 1)]
-    tail, head = at(us[0], 0.0), at(us[-1], 0.0)             # острые концы: задний край и ноги
-    rings = [[at(u, float(GM.half_width(u)) * (2 * j / NV - 1)) for j in range(NV + 1)] for u in us[1:-1]]
-    faces = []
-    for j in range(NV):
-        faces.append(bm.faces.new((tail, rings[0][j + 1], rings[0][j])))
-        faces.append(bm.faces.new((head, rings[-1][j], rings[-1][j + 1])))
-        for i in range(len(rings) - 1):
-            faces.append(bm.faces.new((rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j])))
+    """Добавляет в bm холмик в координатах модели: х — вправо, −у — вперёд (к лицу), z — вверх. Неровный эллипсоид
+    (икосфера, вершины чуть сдвинуты шумом), нижняя половина под землёй срезана; UV — окно текстуры grave_mound_*."""
+    rnd = random.Random(GM.SEED)
+    rx, ry, rz = GM.RADII
+    mat = Matrix.Translation((0, -GM.CENTER_U, 0)) @ Matrix.Diagonal((rx, ry, rz, 1))
+    res = bmesh.ops.create_icosphere(bm, subdivisions=GM.SUBDIV, radius=1.0, matrix=mat)
+    for v in res["verts"]:
+        v.co += Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))) * GM.JITTER
+    new_faces = list({f for v in res["verts"] for f in v.link_faces})
+    low = [f for f in new_faces if f.calc_center_median().z < GM.CUT_Z]
+    bmesh.ops.delete(bm, geom=low, context="FACES")           # нижняя половина под землёй не нужна
+    faces = [f for f in new_faces if f.is_valid]
     uv = bm.loops.layers.uv.verify()
     for f in faces:
-        f.normal_update()
-        if f.normal.z < 0:
-            f.normal_flip()
         f.material_index = mat_index
         f.smooth = True
         for lp in f.loops:
             x, y, _ = lp.vert.co
-            lp[uv].uv = (x / SOIL_TILE_M + 0.37, y / SOIL_TILE_M + 0.61)
+            lp[uv].uv = ((x + GM.WIN_V) / (2 * GM.WIN_V), 1 - (-y - GM.WIN_U0) / (GM.WIN_U1 - GM.WIN_U0))
     return faces
 
 
