@@ -1186,7 +1186,8 @@ POT_PROFILE = [(0.0, 0.0), (0.09, 0.0), (0.13, 0.07), (0.16, 0.19), (0.145, 0.31
 
 
 def _pot(bm, x, y, s=1.0, a0=0.0, tilt=0.0):
-    """Глиняный горшок масштаба s с двумя ручками дугой (a0 — их направление); tilt — наклон, °."""
+    """Глиняный горшок масштаба s с двумя ручками дугой (a0 — их направление); tilt — наклон, °.
+    Только для props_kit (модель pot_clay_a): в саму зону горшки не запекаются — они объекты layout.json у надгробий."""
     before = set(bm.faces)
     faces = lathe(bm, [(r * s, z * s) for r, z in POT_PROFILE], 12, (x, y, 0))
     cyl_uv2(faces, bm, x, y, tile=0.6, r_ref=0.15 * s)
@@ -1204,31 +1205,6 @@ def _pot(bm, x, y, s=1.0, a0=0.0, tilt=0.0):
         part = new_faces(bm, before)
         bmesh.ops.rotate(bm, cent=(x, y, 0), matrix=Matrix.Rotation(math.radians(tilt), 3, "X"),
                          verts=list({v for f in part for v in f.verts}))
-
-
-def build_pots(M=None):
-    """Глиняные горшки с ручками: у крыльца, у ящиков и бочек, несколько — у надгробий."""
-    M = M or mats()
-    clear("pots_")
-    rnd = random.Random(31)
-    gs = graves()
-    spots = [(1.35, 12.55), (-1.45, 12.45), (-2.95, 14.6), (2.85, 15.95)]
-    vases = [(o["position"]["x"], -o["position"]["z"]) for o in layout_objects() if o["objectId"].startswith("vase")]
-    for gx, gy, fx, fy in rnd.sample(gs, len(gs)):
-        if len(spots) >= 9:
-            break
-        px, py = gx + fx * 0.5 - fy * 0.42, gy + fy * 0.5 + fx * 0.42  # сбоку перед надгробием
-        if any(math.hypot(px - vx, py - vy) < 0.8 for vx, vy in vases) or path_sd(px, py) < 0.4:
-            continue
-        spots.append((px, py))
-    bm = bmesh.new()
-    for k, (x, y) in enumerate(spots):
-        s = rnd.uniform(0.75, 1.15)
-        a0 = rnd.uniform(0, math.tau)
-        tilt = rnd.uniform(6, 14) if k % 3 == 2 else 0.0                # часть горшков слегка наклонена
-        _pot(bm, x, y, s, a0, tilt)
-    _, t = finish("pots_a", bm, [M["clay"]], smooth=False)
-    return {"pots_a": t, "count": len(spots)}
 
 
 def build_pedestal(M=None):
@@ -1523,7 +1499,7 @@ def build_moon_light():
 
 STEPS = [build_ground, build_path_stones, build_mounds, build_fence, build_gate, build_trees, build_lamp,
          build_lantern_light, build_bench, build_house, build_house_details, build_house_lights, build_crates,
-         build_barrels, build_pots, build_pedestal, build_grass, build_flowers, build_rocks, build_twigs,
+         build_barrels, build_pedestal, build_grass, build_flowers, build_rocks, build_twigs,
          build_terrain_outer, build_forest, build_moon_light]
 
 
