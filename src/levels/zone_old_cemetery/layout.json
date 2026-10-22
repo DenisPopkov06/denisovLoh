@@ -386,7 +386,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": 13.76,
-        "y": 0,
+        "y": 0.111,
         "z": 2.4
       },
       "rotationY": 55.4,
@@ -397,7 +397,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": 5.51,
-        "y": 0,
+        "y": 0.09,
         "z": -13.59
       },
       "rotationY": 342.2,
@@ -408,7 +408,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": 10.94,
-        "y": 0,
+        "y": 0.107,
         "z": -9.88
       },
       "rotationY": 300.6,
@@ -419,7 +419,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": -15.11,
-        "y": 0,
+        "y": 0.11,
         "z": -6.56
       },
       "rotationY": 286.3,
@@ -430,7 +430,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": -10.29,
-        "y": 0,
+        "y": 0.111,
         "z": 2.03
       },
       "rotationY": 30.3,
@@ -441,7 +441,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": -13.29,
-        "y": 0,
+        "y": 0.111,
         "z": 5.69
       },
       "rotationY": 263.2,
@@ -452,7 +452,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": -16.24,
-        "y": 0,
+        "y": 0.103,
         "z": 11.43
       },
       "rotationY": 266.2,
@@ -463,7 +463,7 @@
       "objectId": "pot_clay_a",
       "position": {
         "x": 14.06,
-        "y": 0,
+        "y": 0.101,
         "z": 11.5
       },
       "rotationY": 6.6,
@@ -474,7 +474,7 @@
       "objectId": "wreath_fresh_a",
       "position": {
         "x": -11.36,
-        "y": 0,
+        "y": 0.124,
         "z": 14.41
       },
       "rotationY": -3.6,
@@ -485,7 +485,7 @@
       "objectId": "wreath_flower_a",
       "position": {
         "x": -12.94,
-        "y": 0,
+        "y": 0.124,
         "z": 11.44
       },
       "rotationY": -3.9,
@@ -496,7 +496,7 @@
       "objectId": "wreath_withered_a",
       "position": {
         "x": 16.14,
-        "y": 0,
+        "y": 0.124,
         "z": 11.07
       },
       "rotationY": 2.3,
@@ -507,7 +507,7 @@
       "objectId": "wreath_fresh_a",
       "position": {
         "x": -15.98,
-        "y": 0,
+        "y": 0.124,
         "z": 10.97
       },
       "rotationY": 2.6,
@@ -518,7 +518,7 @@
       "objectId": "wreath_flower_a",
       "position": {
         "x": 11.02,
-        "y": 0,
+        "y": 0.124,
         "z": 10.81
       },
       "rotationY": -4.9,
@@ -529,7 +529,7 @@
       "objectId": "wreath_withered_a",
       "position": {
         "x": -15.92,
-        "y": 0,
+        "y": 0.124,
         "z": 7.87
       },
       "rotationY": -0.3,
@@ -540,7 +540,7 @@
       "objectId": "flowers_daisy_a",
       "position": {
         "x": 8.12,
-        "y": 0,
+        "y": 0.112,
         "z": 5.47
       },
       "rotationY": 34.7,
@@ -551,7 +551,7 @@
       "objectId": "flowers_bluebell_a",
       "position": {
         "x": 5.58,
-        "y": 0,
+        "y": 0.114,
         "z": 5.35
       },
       "rotationY": 315.8,
@@ -584,7 +584,7 @@
       "objectId": "flowers_bluebell_a",
       "position": {
         "x": -10.8,
-        "y": 0,
+        "y": 0.092,
         "z": 1.64
       },
       "rotationY": 23.8,

@@ -15,12 +15,17 @@ import random
 import re
 import ast
 import json
+import sys
 
 import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
 
 HERE = os.environ.get("NK_ASSETS", r"D:\dev\denisovLoh\assets_src\blender")
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import grave_mound as GMD  # noqa: E402  (общая форма холмика у надгробия)
+
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 TEX = os.path.join(REPO, "assets_src", "textures_src")
 OUT_GLB = os.path.join(REPO, "public", "models", "zone_old_cemetery.glb")
@@ -424,22 +429,37 @@ def build_path_stones(M=None, count=230):
 
 
 def build_mounds(M=None):
-    """Земляные холмики перед надгробиями (по layout.json). UV мировые, как у земли: сливаются с нарисованным грунтом."""
+    """Земляные холмики у надгробий (по layout.json), форма — grave_mound.py (она же рисует пятно грунта в
+    zone_textures.ground_unique и задаёт высоту предметов на холмике). Голова холмика во всю ширину упирается в цоколь
+    и уходит под него: надгробие и закопанная земля — одно целое. UV мировые, как у земли: сливаются с грунтом."""
     M = M or mats()
     clear("grave_mounds_")
-    rnd = random.Random(21)
     bm = bmesh.new()
+    nu, nv = 22, 10                                   # срезов вдоль холмика, ячеек поперёк
     count = 0
-    for gx, gy, fx, fy in graves():
-        sc = rnd.uniform(0.92, 1.08)
-        theta = math.atan2(-fx, fy)                               # локальная ось Y → направление «лица»
-        mat = (Matrix.Translation((gx + fx * 1.05, gy + fy * 1.05, 0.0)) @ Matrix.Rotation(theta, 4, "Z")
-               @ Matrix.Diagonal((0.44 * sc, 0.98 * sc, 0.14 * sc, 1)))
-        res = bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0, matrix=mat)
-        for v in res["verts"]:
-            v.co += Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))) * 0.02
-        low = [f for f in _faces_of(res["verts"]) if f.calc_center_median().z < -0.01]
-        bmesh.ops.delete(bm, geom=low, context="FACES")           # нижняя половина под землёй не нужна
+    for gx, gy, fx, fy, wh in GMD.graves_from_layout(layout_objects()):
+        def at(u, v):
+            """Мировая точка поверхности холмика в локальных (u вперёд, v вправо); край утоплен под землю."""
+            z = float(GMD.height(u, v, wh)) - GMD.EMBED
+            return bm.verts.new((gx + u * fx - v * fy, gy + u * fy + v * fx, z))
+
+        us = [GMD.U_BACK + (GMD.U_FOOT - GMD.U_BACK) * (1 - math.cos(math.pi * i / nu)) / 2 for i in range(nu + 1)]
+        tail = at(us[0], 0.0)                                         # острые концы: задний край и ноги
+        head = at(us[-1], 0.0)
+        rings = []
+        for u in us[1:-1]:
+            w = float(GMD.half_width(u, wh))
+            rings.append([at(u, w * (2 * j / nv - 1)) for j in range(nv + 1)])
+        faces = []
+        for j in range(nv):
+            faces.append(bm.faces.new((tail, rings[0][j + 1], rings[0][j])))
+            faces.append(bm.faces.new((head, rings[-1][j], rings[-1][j + 1])))
+            for i in range(len(rings) - 1):
+                faces.append(bm.faces.new((rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j])))
+        for f in faces:
+            f.normal_update()
+            if f.normal.z < 0:
+                f.normal_flip()
         count += 1
     uv = bm.loops.layers.uv.verify()
     for f in bm.faces:
