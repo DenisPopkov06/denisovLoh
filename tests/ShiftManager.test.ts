@@ -42,6 +42,18 @@ describe("ShiftManager", () => {
     expect(shiftManager.isShiftComplete()).toBe(true);
   });
 
+  it("reports each completed task once (coin reward hook), not repeat fixes", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onTaskCompleted = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, () => {}, onTaskCompleted);
+    shiftManager.startShift(makeConfig());
+
+    stateMachine.transition("grave_014", ObjectState.NORMAL);
+    stateMachine.transition("grave_014", ObjectState.NORMAL);
+    expect(onTaskCompleted).toHaveBeenCalledTimes(1);
+    expect(onTaskCompleted).toHaveBeenCalledWith("grave_014");
+  });
+
   it("fires onShiftEnd('all_tasks_done') exactly once when the last task is fixed", () => {
     const stateMachine = new ObjectStateMachine();
     const onShiftEnd = vi.fn();
@@ -72,5 +84,29 @@ describe("ShiftManager", () => {
     stateMachine.transition("grave_014", ObjectState.NORMAL);
     stateMachine.transition("vase_01", ObjectState.NORMAL);
     expect(onShiftEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("failShift('caught_by_zombie') ends the shift once and ignores further calls", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onShiftEnd = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, onShiftEnd);
+    shiftManager.startShift(makeConfig());
+
+    shiftManager.failShift("caught_by_zombie");
+    expect(onShiftEnd).toHaveBeenCalledTimes(1);
+    expect(onShiftEnd).toHaveBeenCalledWith("caught_by_zombie");
+
+    shiftManager.failShift("caught_by_zombie");
+    shiftManager.update(0);
+    expect(onShiftEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("failShift() is a no-op before any shift has started", () => {
+    const stateMachine = new ObjectStateMachine();
+    const onShiftEnd = vi.fn();
+    const shiftManager = new ShiftManager(stateMachine, onShiftEnd);
+
+    shiftManager.failShift("caught_by_zombie");
+    expect(onShiftEnd).not.toHaveBeenCalled();
   });
 });

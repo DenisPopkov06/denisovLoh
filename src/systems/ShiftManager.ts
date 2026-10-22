@@ -1,7 +1,7 @@
 import { ObjectState, type ShiftConfig } from "@/data/types";
 import { ObjectStateMachine } from "@/systems/ObjectStateMachine";
 
-export type ShiftEndReason = "time_out" | "all_tasks_done";
+export type ShiftEndReason = "time_out" | "all_tasks_done" | "caught_by_zombie";
 
 export class ShiftManager {
   private currentConfig: ShiftConfig | null = null;
@@ -11,6 +11,8 @@ export class ShiftManager {
   constructor(
     private readonly stateMachine: ObjectStateMachine,
     private readonly onShiftEnd: (reason: ShiftEndReason) => void = () => {},
+    /** Каждая выполненная задача текущей смены — для награды монетами (Game). */
+    private readonly onTaskCompleted: (instanceId: string) => void = () => {},
   ) {
     this.stateMachine.onChange((instanceId, state) => this.handleStateChange(instanceId, state));
   }
@@ -45,6 +47,14 @@ export class ShiftManager {
     if (remainingSec <= 0) this.endShift("time_out");
   }
 
+  /** Проваливает смену извне (игрока поймал зомби — см. Game.update()/ZombieSystem) —
+   *  тот же путь завершения, что и time_out: пауза, сброс currentShiftIndex на 1,
+   *  экран "Смена провалена". Без эффекта, если смена уже закончилась. */
+  failShift(reason: Exclude<ShiftEndReason, "all_tasks_done">): void {
+    if (this.ended || !this.currentConfig) return;
+    this.endShift(reason);
+  }
+
   isShiftComplete(): boolean {
     if (!this.currentConfig) return false;
     return this.currentConfig.tasks.every((task) => this.completedTaskIds.has(task.instanceId));
@@ -70,6 +80,7 @@ export class ShiftManager {
     if (!isTrackedTask || this.completedTaskIds.has(instanceId)) return;
 
     this.completedTaskIds.add(instanceId);
+    this.onTaskCompleted(instanceId);
     if (this.isShiftComplete()) this.endShift("all_tasks_done");
   }
 

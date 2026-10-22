@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { ZOMBIE_APPEARS_AT_SHIFT } from "@/systems/DifficultyScaler";
 
 export const LIGHTING_CONFIG = {
   moonColor: 0x8fa6c9,
@@ -45,7 +46,18 @@ const MIN_LOCAL_LIGHT_FACTOR = 0.08;
 // видимого света и не выдавал силуэты леса/рельефа на контрасте.
 const MIN_SKY_BACKGROUND_INTENSITY = 0.2;
 
+// С появлением зомби (ZombieSystem, с ZOMBIE_APPEARS_AT_SHIFT — см.
+// DifficultyScaler.ts) затемнение запускается заново: на первой "зомби-смене"
+// карта снова такая же светлая, как на 1-й смене (игрок ещё не видел угрозу и
+// должен хорошо разглядеть новую опасность), а дальше темнеет по той же рампе,
+// но короче — за ZOMBIE_DARKNESS_RAMP_SHIFTS смен вместо DARKNESS_RAMP_END_SHIFT,
+// и дальше держится на том же минимуме, что и обычная рампа.
+const ZOMBIE_DARKNESS_RAMP_SHIFTS = 3;
+
 function darknessRampProgress(shiftIndex: number): number {
+  if (shiftIndex >= ZOMBIE_APPEARS_AT_SHIFT) {
+    return Math.min(1, Math.max(0, (shiftIndex - ZOMBIE_APPEARS_AT_SHIFT) / (ZOMBIE_DARKNESS_RAMP_SHIFTS - 1)));
+  }
   return Math.min(1, Math.max(0, (shiftIndex - 1) / (DARKNESS_RAMP_END_SHIFT - 1)));
 }
 

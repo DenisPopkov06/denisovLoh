@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ObjectState, type ZoneLayout, type PlacedObject, type Vec3 } from "@/data/types";
 import { OBJECTS_CATALOG } from "@/data/objects.catalog";
 import { AssetLoader } from "@/core/AssetLoader";
@@ -16,6 +17,22 @@ import { createPlaceholderGround } from "@/render/MaterialsLib";
 
 const FALLEN_TILT_RADIANS = Math.PI / 2;
 const DISPLACED_OFFSET_RADIUS = 1.2;
+
+/** Анимированный зомби (риг с клипами walk/attack/death, исходник —
+ *  assets_src/blender/zombie_rigged.blend). Отдельно от OBJECTS_CATALOG: это не
+ *  декор раскладки, а актёр ZombieSystem со своим набором клипов. */
+const ZOMBIE_MODEL_PATH = "models/characters/zombie_walker_rigged.glb";
+/** Шаг в клипе ходьбы — короткое шарканье, рассчитанное на медленное движение;
+ *  на игровой скорости ZombieSystem (BASE_SPEED) ноги без ускорения заметно не
+ *  успевают за перемещением. Множитель подобран так, чтобы шаги совпадали с ним. */
+const ZOMBIE_WALK_CLIP_TIME_SCALE = 1.6;
+const ZOMBIE_ANIMATION_FADE_SEC = 0.25;
+
+/** Дверь дома смотрителя в zone_*.glb — рядом с ней по E открывается магазин. */
+const SHOP_DOOR_NODE = "house_door_a";
+
+export type ZombieAnimation = "walk" | "attack" | "death";
+const ZOMBIE_ANIMATIONS: readonly ZombieAnimation[] = ["walk", "attack", "death"];
 
 export interface CollisionCircle {
   x: number;
@@ -343,6 +360,14 @@ export class SceneManager {
    *  гаснуть по ходу смен (applyShiftDarkness), иначе двор у дома/фонаря остаётся
    *  ярко освещённым независимо от общего затемнения (см. localLightFactorForShift). */
   private readonly zoneLights: { light: THREE.Light; baseIntensity: number }[] = [];
+  /** Зомби (ZombieSystem) — отдельный актёр, не часть layout.objects/задач смены:
+   *  появляется не сразу (DifficultyScaler.ZOMBIE_APPEARS_AT_SHIFT), переживает смену
+   *  зон (зона грузится один раз за игровую сессию, см. main.ts) и не перемешивается
+   *  вместе с надгробиями (reshufflePlacedObjects). */
+  private zombieInstance: THREE.Object3D | null = null;
+  private readonly zombieActions = new Map<ZombieAnimation, THREE.AnimationAction>();
+  private zombieCurrentAnimation: ZombieAnimation | null = null;
+  private zombieWalkTimeScale = 1;
 
   constructor(
     private readonly assetLoader: AssetLoader,
@@ -502,6 +527,7 @@ export class SceneManager {
     this.circleCoveredMeshes.clear();
     this.itemAnchors.clear();
     this.zoneLights.length = 0;
+    this.zombieInstance = null;
     this.interactableObjects.length = 0;
     this.objectsById.clear();
     this.baseObjectIdByInstance.clear();
@@ -797,6 +823,15 @@ export class SceneManager {
    *  зоны дизайнером) плюс расставленные объекты с collisionMesh в каталоге (дом,
    *  ворота, забор, скамья — длинные/с проходом, круг им не подходит) — для коллизии
    *  игрока лучом вперёд по курсу движения. */
+  /** Точка у двери дома смотрителя (узел SHOP_DOOR_NODE в запечённой геометрии
+   *  зоны) — там открывается магазин. null — в зоне нет дома. */
+  getShopAnchor(): Vec3 | null {
+    const door = this.staticGeometry?.getObjectByName(SHOP_DOOR_NODE);
+    if (!door) return null;
+    const center = new THREE.Box3().setFromObject(door).getCenter(new THREE.Vector3());
+    return { x: center.x, y: center.y, z: center.z };
+  }
+
   getStaticCollisionMeshes(): THREE.Object3D[] {
     const meshes: THREE.Object3D[] = this.staticGeometry ? [this.staticGeometry] : [];
     for (const object of this.objectsById.values()) {
@@ -837,5 +872,109 @@ export class SceneManager {
    *  раз при загрузке зоны, забор не двигается и не меняет состояние. */
   getCollisionRects(): readonly CollisionRect[] {
     return this.staticCollisionRects;
+  }
+
+  // --- Зомби (ZombieSystem) ---------------------------------------------------
+
+  /** Спавнит зомби в сцене (не более одного за раз — повторный вызов, пока он уже
+   *  есть, игнорируется) и запускает клип ходьбы. Клипы не играют одновременно, как
+   *  у декора (startAnimations) — переключаются playZombieAnimation(). */
+  async spawnZombie(position: Vec3): Promise<void> {
+    if (this.zombieInstance || !this.zoneRoot) return;
+
+    let gltf;
+    try {
+      gltf = await this.assetLoader.loadModel(ZOMBIE_MODEL_PATH);
+    } catch (error) {
+      console.warn(`[SceneManager] не удалось загрузить модель зомби "${ZOMBIE_MODEL_PATH}"`, error);
+      return;
+    }
+    // Пока модель грузилась, зона могла выгрузиться или зомби уже успели заспавнить
+    // повторным вызовом — тогда этот результат уже не актуален.
+    if (this.zombieInstance || !this.zoneRoot) return;
+
+    // SkeletonUtils.clone, а не Object3D.clone: у скиннед-меша обычный clone оставляет
+    // ссылку на кости ИСХОДНОЙ (кэшированной загрузчиком) сцены — анимация двигала бы их.
+    const instance = cloneSkinned(gltf.scene);
+    enableShadows(instance);
+    instance.position.set(position.x, position.y, position.z);
+    this.zoneRoot.add(instance);
+    this.zombieInstance = instance;
+
+    const mixer = new THREE.AnimationMixer(instance);
+    for (const name of ZOMBIE_ANIMATIONS) {
+      const clip = THREE.AnimationClip.findByName(gltf.animations, name);
+      if (!clip) {
+        console.warn(`[SceneManager] у модели зомби нет клипа "${name}"`);
+        continue;
+      }
+      const action = mixer.clipAction(clip);
+      if (name === "death") {
+        // Один раз и остаётся лежать на последнем кадре.
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      }
+      this.zombieActions.set(name, action);
+    }
+    this.animationMixers.set(instance, mixer);
+    this.zombieWalkTimeScale = 1;
+    this.playZombieAnimation("walk");
+  }
+
+  /** Убирает зомби со сцены (игрок проиграл смену — начинаем заново с 1-й смены,
+   *  где зомби ещё не должно быть; см. Game.onShiftEnd). */
+  removeZombie(): void {
+    if (!this.zombieInstance) return;
+    this.stopAnimations(this.zombieInstance);
+    this.zombieActions.clear();
+    this.zombieCurrentAnimation = null;
+    this.zombieInstance.removeFromParent();
+    disposeObject(this.zombieInstance);
+    this.zombieInstance = null;
+  }
+
+  /** Плавно (кроссфейдом) переключает клип зомби; повторный вызов с тем же клипом —
+   *  no-op, поэтому ZombieSystem может звать его каждый кадр. */
+  playZombieAnimation(name: ZombieAnimation): void {
+    if (this.zombieCurrentAnimation === name) return;
+    const next = this.zombieActions.get(name);
+    if (!next) return;
+    const previous = this.zombieCurrentAnimation ? this.zombieActions.get(this.zombieCurrentAnimation) : undefined;
+    next.reset();
+    next.timeScale = name === "walk" ? ZOMBIE_WALK_CLIP_TIME_SCALE * this.zombieWalkTimeScale : 1;
+    next.play();
+    if (previous) previous.crossFadeTo(next, ZOMBIE_ANIMATION_FADE_SEC, false);
+    this.zombieCurrentAnimation = name;
+  }
+
+  isZombieActive(): boolean {
+    return this.zombieInstance !== null;
+  }
+
+  /** Текущая позиция зомби — ZombieSystem двигает её сам (AI), SceneManager только
+   *  хранит актёра и его коллизии/анимацию. */
+  getZombiePosition(): Vec3 | null {
+    if (!this.zombieInstance) return null;
+    const { x, y, z } = this.zombieInstance.position;
+    return { x, y, z };
+  }
+
+  /** position — новая позиция (XZ двигает ZombieSystem, Y не меняется — зомби ходит
+   *  по плоской земле зоны, как и игрок); yawRadians — поворот лицом к направлению
+   *  движения (модель смотрит на +Z glTF в нейтральной позе, см. каталог). */
+  setZombiePose(position: Vec3, yawRadians: number): void {
+    if (!this.zombieInstance) return;
+    this.zombieInstance.position.set(position.x, position.y, position.z);
+    this.zombieInstance.rotation.y = yawRadians;
+  }
+
+  /** Ускоряет/замедляет проигрывание клипа ходьбы вместе со скоростью зомби (иначе
+   *  ноги перебирают с одной и той же частотой независимо от того, как быстро он
+   *  на самом деле едет по земле — на высоких сменах выглядело бы как скольжение). */
+  setZombieAnimationSpeed(timeScale: number): void {
+    // Только ходьба: удар и падение — с собственной скоростью, независимо от смены.
+    this.zombieWalkTimeScale = timeScale;
+    const walk = this.zombieActions.get("walk");
+    if (walk) walk.timeScale = ZOMBIE_WALK_CLIP_TIME_SCALE * timeScale;
   }
 }
