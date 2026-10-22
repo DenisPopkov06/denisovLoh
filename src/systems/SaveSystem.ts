@@ -10,9 +10,23 @@ export interface SaveData {
   coins: number;
   /** Уровни навыков (SkillSystem), ключ — SkillId. */
   skills: Partial<Record<string, number>>;
+  /** Запас предметов (InventorySystem.getStock), ключ — ItemId. */
+  itemStock: Partial<Record<string, number>>;
+  /** Сколько раз каждый предмет уже покупали (InventorySystem.getPurchaseCounts) —
+   *  нужно отдельно от itemStock, чтобы цена следующей покупки не сбрасывалась
+   *  после того, как весь запас израсходован. */
+  itemPurchases: Partial<Record<string, number>>;
 }
 
-const DEFAULT_SAVE: SaveData = { shiftIndex: 1, score: 0, soundVolume: 1, coins: 0, skills: {} };
+const DEFAULT_SAVE: SaveData = {
+  shiftIndex: 1,
+  score: 0,
+  soundVolume: 1,
+  coins: 0,
+  skills: {},
+  itemStock: {},
+  itemPurchases: {},
+};
 
 export class SaveSystem {
   private loadLocal(): SaveData {

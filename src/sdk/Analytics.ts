@@ -4,7 +4,10 @@ export type AnalyticsEvent =
   | { name: "shift_start"; shiftIndex: number }
   | { name: "shift_end"; shiftIndex: number; reason: "time_out" | "all_tasks_done" | "caught_by_zombie" }
   | { name: "hint_used"; shiftIndex: number }
-  | { name: "skill_upgrade"; skill: string; level: number };
+  | { name: "skill_upgrade"; skill: string; level: number }
+  | { name: "item_buy"; item: string }
+  | { name: "pistol_shot" }
+  | { name: "game_won" };
 
 /**
  * ysdk.features.GameplayAPI размечает начало/конец игровой сессии для площадки
