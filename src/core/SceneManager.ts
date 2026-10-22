@@ -254,9 +254,10 @@ function isGravestoneLikeObjectId(objectId: string): boolean {
   return !!entry && entry.repairableStates.length > 0 && entry.collisionRadius !== undefined;
 }
 
-type ItemKind = "pot" | "flowers" | "wreath";
+type ItemKind = "pot" | "flowers" | "wreath" | "earth";
 
 function itemKindOf(objectId: string): ItemKind | null {
+  if (objectId === "grave_earth_a") return "earth";
   if (objectId === "pot_clay_a") return "pot";
   if (objectId.startsWith("flowers_")) return "flowers";
   if (objectId.startsWith("wreath_")) return "wreath";
@@ -269,7 +270,14 @@ function itemKindOf(objectId: string): ItemKind | null {
 // см. objects.catalog.ts: "лицом к +Z, стоят на хвостах ленты — прислонить к
 // надгробию"); горшок и цветы — по бокам перед камнем, подальше друг от друга и от
 // венка, чтобы три предмета на одном надгробии не перекрывали друг друга.
+//
+// Земля (grave_earth_a, закопанная область — отдельный декор-объект в паре с каждым камнем,
+// см. objects.catalog.ts) — слот (0, 0): её origin уже стоит у камня, холмик вытянут вперёд
+// по +Z от лицевой грани — поэтому земля просто едет вместе со своим камнем на любое его
+// место/поворот при перемешивании. DISPLACED/FALLEN камня землю не трогают (applyFallbackTransform
+// двигает только сам камень) — сдвинутый камень уходит от своей земли.
 const ITEM_SLOTS: Record<ItemKind, { x: number; z: number }> = {
+  earth: { x: 0, z: 0 },
   wreath: { x: 0, z: 0.14 },
   pot: { x: 0.45, z: 0.25 },
   flowers: { x: -0.45, z: 0.25 },
