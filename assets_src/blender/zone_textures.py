@@ -1,7 +1,7 @@
 """Текстуры зоны «Старое кладбище» (синтез на numpy): уникальная земля, тайлы, табличка ворот.
 
 Земля — ОДНА уникальная карта 2048² на всю зону (ground_old_cemetery_*, ≈2 см/пиксель, без повторов):
-трава, проплешины, подстилка, тропы (холмики у надгробий — часть моделей надгробий, не зоны). Тайлы дерево/кора/камень —
+трава, проплешины, подстилка, холмики у надгробий (по layout.json), тропы. Тайлы дерево/кора/камень —
 albedo / normal / ORM (JPEG) в assets_src/textures_src/ с префиксом tile_. Шум периодический (FFT), поэтому швов при повторе нет. Табличка ворот —
 отдельная текстура 1024x256 с надписью (шрифт Times New Roman Bold, кириллица).
 
@@ -207,6 +207,26 @@ def ground_unique():
     weeds = sstep(1.1, 0.0, inside) * (0.55 + 0.45 * n01(field(0.45, 114), 0.3))
     col = col * (1 - 0.45 * weeds[..., None]) + np.array((0.055, 0.105, 0.04)) * 0.45 * weeds[..., None]
 
+    # --- холмики перед надгробиями (по layout.json): земля, редкие всходы
+    graves = [o for o in json.load(open(LAYOUT, encoding="utf-8"))["objects"] if o["objectId"].startswith("gravestone")]
+    mound_m = np.zeros((GN, GN), np.float32)
+    edge_n, mound_tone, sprout = field(0.35, 130), field(0.12, 131, 1.6), field(0.1, 132, 1.6)
+    for o in graves:
+        gx, gy = o["position"]["x"], -o["position"]["z"]
+        a = math.radians(o["rotationY"])
+        fx, fy = math.sin(a), -math.cos(a)           # куда «смотрит» надгробие (Blender: y = -z)
+        cx, cy = gx + fx * 1.05, gy + fy * 1.05
+        sy, sx, wx, wy = window(cx, cy, 1.6)
+        u = (wx - cx) * fx + (wy - cy) * fy
+        v = -(wx - cx) * fy + (wy - cy) * fx
+        d = (np.abs(u) / 0.98) ** 2.6 + (np.abs(v) / 0.44) ** 2.6 - 1 + 0.30 * edge_n[sy, sx]
+        mound_m[sy, sx] = np.maximum(mound_m[sy, sx], 1 - sstep(-0.25, 0.20, d))
+    mcol = lerp((0.20, 0.15, 0.095), (0.30, 0.225, 0.14), n01(mound_tone, 0.3))
+    spr = sstep(0.62, 0.74, n01(sprout, 0.3))[..., None]
+    mcol = mcol * (1 - 0.7 * spr) + np.array((0.12, 0.19, 0.07)) * 0.7 * spr
+    col = col * (1 - 0.88 * mound_m[..., None]) + mcol * 0.88 * mound_m[..., None]
+    height += 0.05 * mound_m
+
     # --- утоптанный двор у дома и пятно у основания креста
     x0, x1, y0, y1 = YARD
     dyard = np.maximum(np.maximum(x0 - X, X - x1), np.maximum(y0 - Y, Y - y1)) + 0.45 * field(0.8, 160)
@@ -244,7 +264,7 @@ def ground_unique():
     height = height * (1 - 0.6 * pm) + 0.30 * pm + 0.35 * peb * pm
 
     # --- редкие полевые цветы (мелкие крапинки на траве)
-    fl = sstep(2.55, 2.95, field(0.07, 150, 1.0)) * (1 - pm) * (1 - soil_m)
+    fl = sstep(2.55, 2.95, field(0.07, 150, 1.0)) * (1 - pm) * (1 - soil_m) * (1 - mound_m)
     ftone = n01(field(2.0, 151), 0.5)
     fcol = lerp((0.62, 0.60, 0.45), (0.55, 0.45, 0.62), ftone)
     col = col * (1 - 0.9 * fl[..., None]) + fcol * 0.9 * fl[..., None]

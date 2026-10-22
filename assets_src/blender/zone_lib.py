@@ -423,6 +423,34 @@ def build_path_stones(M=None, count=230):
     return {"path_stones": t, "count": placed}
 
 
+def build_mounds(M=None):
+    """Земляные холмики перед надгробиями (по layout.json). UV мировые, как у земли: сливаются с нарисованным грунтом."""
+    M = M or mats()
+    clear("grave_mounds_")
+    rnd = random.Random(21)
+    bm = bmesh.new()
+    count = 0
+    for gx, gy, fx, fy in graves():
+        sc = rnd.uniform(0.92, 1.08)
+        theta = math.atan2(-fx, fy)                               # локальная ось Y → направление «лица»
+        mat = (Matrix.Translation((gx + fx * 1.05, gy + fy * 1.05, 0.0)) @ Matrix.Rotation(theta, 4, "Z")
+               @ Matrix.Diagonal((0.44 * sc, 0.98 * sc, 0.14 * sc, 1)))
+        res = bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0, matrix=mat)
+        for v in res["verts"]:
+            v.co += Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))) * 0.02
+        low = [f for f in _faces_of(res["verts"]) if f.calc_center_median().z < -0.01]
+        bmesh.ops.delete(bm, geom=low, context="FACES")           # нижняя половина под землёй не нужна
+        count += 1
+    uv = bm.loops.layers.uv.verify()
+    for f in bm.faces:
+        f.material_index = 0
+        for lp in f.loops:
+            x, y, _ = lp.vert.co
+            lp[uv].uv = ((x + HALF) / (2 * HALF), (y + HALF) / (2 * HALF))
+    _, t = finish("grave_mounds_a", bm, [M["ground"]], smooth=True)
+    return {"grave_mounds": t, "count": count}
+
+
 def _fence_post(bm, P, hgt):
     """Столб забора высотой hgt с пирамидальным навершием; P — положение основания."""
     add_box(bm, (0, 0, hgt / 2), (0.16, 0.16, hgt), P, tile=1.0)
@@ -1138,8 +1166,7 @@ POT_PROFILE = [(0.0, 0.0), (0.09, 0.0), (0.13, 0.07), (0.16, 0.19), (0.145, 0.31
 
 
 def _pot(bm, x, y, s=1.0, a0=0.0, tilt=0.0):
-    """Глиняный горшок масштаба s с двумя ручками дугой (a0 — их направление); tilt — наклон, °.
-    Только для props_kit (модель pot_clay_a): в саму зону горшки не запекаются — они объекты layout.json у надгробий."""
+    """Глиняный горшок масштаба s с двумя ручками дугой (a0 — их направление); tilt — наклон, °."""
     before = set(bm.faces)
     faces = lathe(bm, [(r * s, z * s) for r, z in POT_PROFILE], 12, (x, y, 0))
     cyl_uv2(faces, bm, x, y, tile=0.6, r_ref=0.15 * s)
@@ -1157,6 +1184,31 @@ def _pot(bm, x, y, s=1.0, a0=0.0, tilt=0.0):
         part = new_faces(bm, before)
         bmesh.ops.rotate(bm, cent=(x, y, 0), matrix=Matrix.Rotation(math.radians(tilt), 3, "X"),
                          verts=list({v for f in part for v in f.verts}))
+
+
+def build_pots(M=None):
+    """Глиняные горшки с ручками: у крыльца, у ящиков и бочек, несколько — у надгробий."""
+    M = M or mats()
+    clear("pots_")
+    rnd = random.Random(31)
+    gs = graves()
+    spots = [(1.35, 12.55), (-1.45, 12.45), (-2.95, 14.6), (2.85, 15.95)]
+    vases = [(o["position"]["x"], -o["position"]["z"]) for o in layout_objects() if o["objectId"].startswith("vase")]
+    for gx, gy, fx, fy in rnd.sample(gs, len(gs)):
+        if len(spots) >= 9:
+            break
+        px, py = gx + fx * 0.5 - fy * 0.42, gy + fy * 0.5 + fx * 0.42  # сбоку перед надгробием
+        if any(math.hypot(px - vx, py - vy) < 0.8 for vx, vy in vases) or path_sd(px, py) < 0.4:
+            continue
+        spots.append((px, py))
+    bm = bmesh.new()
+    for k, (x, y) in enumerate(spots):
+        s = rnd.uniform(0.75, 1.15)
+        a0 = rnd.uniform(0, math.tau)
+        tilt = rnd.uniform(6, 14) if k % 3 == 2 else 0.0                # часть горшков слегка наклонена
+        _pot(bm, x, y, s, a0, tilt)
+    _, t = finish("pots_a", bm, [M["clay"]], smooth=False)
+    return {"pots_a": t, "count": len(spots)}
 
 
 def build_pedestal(M=None):
@@ -1449,9 +1501,9 @@ def build_moon_light():
     return {"moon_light": tuple(round(v, 1) for v in pos), "intensity": MOON_POWER}
 
 
-STEPS = [build_ground, build_path_stones, build_fence, build_gate, build_trees, build_lamp,
+STEPS = [build_ground, build_path_stones, build_mounds, build_fence, build_gate, build_trees, build_lamp,
          build_lantern_light, build_bench, build_house, build_house_details, build_house_lights, build_crates,
-         build_barrels, build_pedestal, build_grass, build_flowers, build_rocks, build_twigs,
+         build_barrels, build_pots, build_pedestal, build_grass, build_flowers, build_rocks, build_twigs,
          build_terrain_outer, build_forest, build_moon_light]
 
 
