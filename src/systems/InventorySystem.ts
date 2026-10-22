@@ -6,7 +6,7 @@
  *  Повторная покупка одного и того же предмета дороже предыдущей (rebuyGrowth,
  *  до growthCap) — чем дальше по сменам, тем выше цена "просто остаться на плаву",
  *  это и создаёт нарастающую сложность без изменения урона/времени смены. */
-export type ItemId = "bandage" | "medkit" | "trap" | "shovel" | "spareBulb" | "pistol" | "key";
+export type ItemId = "shovel" | "pistol" | "flashlightItem" | "medkit" | "crowbar" | "ammo" | "bandage" | "key" | "trap";
 
 export type ItemCategory = "weapon" | "tool" | "consumable" | "special";
 
@@ -23,29 +23,43 @@ export interface ItemDefinition {
   /** Рост цены за каждую уже совершённую покупку этого предмета, до growthCap. */
   rebuyGrowth: number;
   growthCap: number;
-  /** Ключ — не расходуется, нельзя купить второй раз, пока он есть (нет смысла). */
+  /** Не расходуется, нельзя купить второй раз, пока он есть (нет смысла) — оружие
+   *  и ключ "владеешь один раз", а не стопкой. */
   singleOwn?: boolean;
 }
 
+// Порядок и состав — как на референсе дизайнера (2 ряда по 4): Лопата, Пистолет,
+// Фонарь, Аптечка / Лом, Патроны, Бинт, Ключ. Пистолет теперь отдельно от патронов
+// (владение оружием — одноразовая покупка, боеприпасы — расходник), как на референсе.
 export const ITEMS: readonly ItemDefinition[] = [
-  { id: "bandage", title: "Бинты", description: "Восстанавливают 30% здоровья", category: "consumable", unit: "шт", rechargeAmount: 1, baseCost: 90, rebuyGrowth: 0.08, growthCap: 1.6 },
-  { id: "medkit", title: "Аптечка", description: "Восстанавливают здоровье полностью", category: "consumable", unit: "шт", rechargeAmount: 1, baseCost: 240, rebuyGrowth: 0.08, growthCap: 1.6 },
+  { id: "shovel", title: "Лопата", description: "Нужна для ремонта и раскопок лопатой", category: "tool", unit: "использований", rechargeAmount: 15, baseCost: 300, rebuyGrowth: 0.15, growthCap: 2 },
+  { id: "pistol", title: "Пистолет", description: "Базовое оружие — убивает зомби выстрелом", category: "weapon", unit: "шт", rechargeAmount: 1, baseCost: 800, rebuyGrowth: 0, growthCap: 1, singleOwn: true },
+  // Предмет "Фонарь" ≠ навык "Фонарь" (SkillSystem) — этот покупает новую лампу,
+  // когда старая перегорит (FlashlightSystem.installBulb), навык замедляет расход
+  // заряда. Id не "flashlight", чтобы не путать с полем FlashlightSystem в коде.
+  { id: "flashlightItem", title: "Фонарь", description: "Освещает тёмные места. Можно улучшать (см. прокачку)", category: "tool", unit: "сек свечения", rechargeAmount: 180, baseCost: 200, rebuyGrowth: 0.15, growthCap: 2 },
+  { id: "medkit", title: "Аптечка", description: "Восстанавливает здоровье полностью", category: "consumable", unit: "шт", rechargeAmount: 1, baseCost: 300, rebuyGrowth: 0.08, growthCap: 1.6 },
+  // Пока без эффекта — в игре ещё нет запертых дверей/контейнеров, которые он
+  // должен открывать (решение: добавить для соответствия референсу, реализовать
+  // позже вместе с этой механикой).
+  { id: "crowbar", title: "Лом", description: "Открывает закрытые двери и контейнеры", category: "tool", unit: "шт", rechargeAmount: 1, baseCost: 250, rebuyGrowth: 0.1, growthCap: 1.8 },
+  { id: "ammo", title: "Патроны", description: "Боеприпасы для пистолета", category: "weapon", unit: "патронов", rechargeAmount: 6, baseCost: 150, rebuyGrowth: 0.12, growthCap: 2.2 },
+  { id: "bandage", title: "Бинт", description: "Останавливает кровь, восстанавливает часть здоровья", category: "consumable", unit: "шт", rechargeAmount: 1, baseCost: 100, rebuyGrowth: 0.08, growthCap: 1.6 },
+  { id: "key", title: "Ключ", description: "Открывает путь из города — завершает игру", category: "special", unit: "шт", rechargeAmount: 1, baseCost: 2600, rebuyGrowth: 0, growthCap: 1, singleOwn: true },
+  // Не на референсе дизайнера (там нет иконки капкана) — оставлен: пользователь
+  // отдельно просил его раньше, и это рабочая механика (ZombieSystem.stun()).
   { id: "trap", title: "Капкан", description: "Оглушает зомби при срабатывании", category: "weapon", unit: "шт", rechargeAmount: 1, baseCost: 160, rebuyGrowth: 0.1, growthCap: 1.8 },
-  { id: "shovel", title: "Лопата", description: "Нужна для ремонта и раскопок", category: "tool", unit: "использований", rechargeAmount: 15, baseCost: 200, rebuyGrowth: 0.15, growthCap: 2 },
-  { id: "spareBulb", title: "Запасной фонарик", description: "Новая лампа, когда старая перегорит", category: "tool", unit: "сек свечения", rechargeAmount: 180, baseCost: 170, rebuyGrowth: 0.15, growthCap: 2 },
-  { id: "pistol", title: "Пистолет", description: "Убивает зомби выстрелом", category: "weapon", unit: "патронов", rechargeAmount: 6, baseCost: 520, rebuyGrowth: 0.2, growthCap: 2.2 },
-  { id: "key", title: "Ключ", description: "Открывает путь из города — концовка игры", category: "special", unit: "шт", rechargeAmount: 1, baseCost: 2600, rebuyGrowth: 0, growthCap: 1, singleOwn: true },
 ];
 
 export type ItemStock = Record<ItemId, number>;
 export type ItemPurchaseCounts = Record<ItemId, number>;
 
 function emptyStock(): ItemStock {
-  return { bandage: 0, medkit: 0, trap: 0, shovel: 0, spareBulb: 0, pistol: 0, key: 0 };
+  return { shovel: 0, pistol: 0, flashlightItem: 0, medkit: 0, crowbar: 0, ammo: 0, bandage: 0, key: 0, trap: 0 };
 }
 
 function emptyPurchaseCounts(): ItemPurchaseCounts {
-  return { bandage: 0, medkit: 0, trap: 0, shovel: 0, spareBulb: 0, pistol: 0, key: 0 };
+  return { shovel: 0, pistol: 0, flashlightItem: 0, medkit: 0, crowbar: 0, ammo: 0, bandage: 0, key: 0, trap: 0 };
 }
 
 function definition(id: ItemId): ItemDefinition {

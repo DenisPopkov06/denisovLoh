@@ -5,7 +5,7 @@ describe("InventorySystem", () => {
   it("starts empty", () => {
     const inventory = new InventorySystem();
     expect(inventory.getRemaining("bandage")).toBe(0);
-    expect(inventory.getNextCost("bandage")).toBe(90);
+    expect(inventory.getNextCost("bandage")).toBe(100);
   });
 
   it("grant() tops up stock by the item's recharge amount", () => {
@@ -18,14 +18,14 @@ describe("InventorySystem", () => {
 
   it("rebuy price grows with each purchase, capped at growthCap", () => {
     const inventory = new InventorySystem();
-    const first = inventory.getNextCost("pistol")!;
-    inventory.grant("pistol");
-    const second = inventory.getNextCost("pistol")!;
+    const first = inventory.getNextCost("ammo")!;
+    inventory.grant("ammo");
+    const second = inventory.getNextCost("ammo")!;
     expect(second).toBeGreaterThan(first);
 
-    for (let i = 0; i < 20; i++) inventory.grant("pistol");
-    const capped = inventory.getNextCost("pistol")!;
-    expect(capped).toBe(Math.round(520 * 2.2));
+    for (let i = 0; i < 20; i++) inventory.grant("ammo");
+    const capped = inventory.getNextCost("ammo")!;
+    expect(capped).toBe(Math.round(150 * 2.2));
   });
 
   it("consume() only spends what is available", () => {
@@ -36,13 +36,18 @@ describe("InventorySystem", () => {
     expect(inventory.getRemaining("bandage")).toBe(0);
   });
 
-  it("key is single-own: cannot be bought again once owned", () => {
+  it("key and pistol are single-own: cannot be bought again once owned", () => {
     const inventory = new InventorySystem();
     expect(inventory.getNextCost("key")).toBe(2600);
     inventory.grant("key");
     expect(inventory.getRemaining("key")).toBe(1);
     expect(inventory.getNextCost("key")).toBeNull();
     expect(inventory.grant("key")).toBe(false);
+
+    expect(inventory.getNextCost("pistol")).toBe(800);
+    inventory.grant("pistol");
+    expect(inventory.getNextCost("pistol")).toBeNull();
+    expect(inventory.grant("pistol")).toBe(false);
   });
 
   it("loads saved stock and purchase counts, clamping junk", () => {
@@ -51,6 +56,6 @@ describe("InventorySystem", () => {
     expect(inventory.getRemaining("bandage")).toBe(3);
     expect(inventory.getRemaining("medkit")).toBe(0);
     const priceAfterTwoPurchases = inventory.getNextCost("bandage")!;
-    expect(priceAfterTwoPurchases).toBeGreaterThan(90);
+    expect(priceAfterTwoPurchases).toBeGreaterThan(100);
   });
 });

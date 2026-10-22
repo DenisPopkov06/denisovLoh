@@ -1,5 +1,5 @@
 import { SKILLS, SKILL_MAX_LEVEL, type SkillId } from "@/systems/SkillSystem";
-import { ITEMS, type ItemId, type ItemCategory } from "@/systems/InventorySystem";
+import { ITEMS, type ItemId } from "@/systems/InventorySystem";
 import { icon, ITEM_ICON_NAME } from "@/ui/icons";
 
 export interface ShopSkillState {
@@ -26,20 +26,8 @@ const SKILL_ICON: Record<SkillId, string> = {
   flashlight: "flashlight",
   health: "health",
   stamina: "stamina",
-  repair: "shovel",
+  repair: "shovelSkill",
 };
-
-interface ShopTab {
-  title: string;
-  category: ItemCategory | null;
-}
-
-const TABS: readonly ShopTab[] = [
-  { title: "Все", category: null },
-  { title: "Оружие", category: "weapon" },
-  { title: "Инструменты", category: "tool" },
-  { title: "Расходники", category: "consumable" },
-];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -80,7 +68,6 @@ export class ShopScreen {
   private readonly balanceValue: HTMLElement;
   private readonly rows = new Map<SkillId, SkillRow>();
   private readonly itemRows = new Map<ItemId, ItemRow>();
-  private activeCategory: ItemCategory | null = null;
   private visible = false;
 
   constructor(
@@ -154,7 +141,6 @@ export class ShopScreen {
       row.button.textContent = soldOut ? "Есть" : "Купить";
       row.button.disabled = !affordable;
       row.price.classList.toggle("shop__price--short", !soldOut && !affordable);
-      row.card.style.display = this.activeCategory === null || item.category === this.activeCategory ? "" : "none";
     }
   }
 
@@ -213,28 +199,12 @@ export class ShopScreen {
     header.appendChild(coinTag("shop__balance").root);
     panel.appendChild(header);
 
-    const tabs = el("div", "shop__tabs");
-    const tabButtons: HTMLButtonElement[] = [];
-    TABS.forEach((tab, index) => {
-      const button = el("button", "shop__tab", tab.title);
-      button.type = "button";
-      button.addEventListener("click", () => {
-        this.activeCategory = tab.category;
-        tabButtons.forEach((other, otherIndex) => other.classList.toggle("shop__tab--active", otherIndex === index));
-        this.refreshItemVisibility();
-      });
-      tabButtons.push(button);
-      tabs.appendChild(button);
-    });
-    tabButtons[0]?.classList.add("shop__tab--active");
-    panel.appendChild(tabs);
-
     const items = el("div", "shop__items");
     for (const item of ITEMS) {
       const card = el("div", "shop__item-card");
 
       const iconBox = el("span", "shop__item-icon");
-      iconBox.appendChild(icon(ITEM_ICON_NAME[item.id], "shop__svg"));
+      iconBox.appendChild(icon(ITEM_ICON_NAME[item.id], "shop__item-svg"));
 
       const name = el("span", "shop__item-name", item.title);
       const desc = el("p", "shop__item-desc", item.description);
@@ -257,14 +227,6 @@ export class ShopScreen {
     }
     panel.appendChild(items);
     return panel;
-  }
-
-  private refreshItemVisibility(): void {
-    for (const item of ITEMS) {
-      const row = this.itemRows.get(item.id);
-      if (!row) continue;
-      row.card.style.display = this.activeCategory === null || item.category === this.activeCategory ? "" : "none";
-    }
   }
 
   private buildTip(): HTMLElement {

@@ -34,17 +34,19 @@ const SHOP_RADIUS = 2.8;
 // Пока открыт магазин, камера смотрит от двери на кладбище (фон как на референсе),
 // почти горизонтально — за панелями видны деревья, фонарь и небо. При закрытии возвращается прежний взгляд.
 const SHOP_VIEW_PITCH = 0.02;
-// Хотбар предметов (HUD) — у каждого расходуемого предмета своя клавиша; лопата и
-// запасной фонарик сюда не входят — это не "активируемые" предметы, лопата тратится
-// сама при ремонте (InteractionSystem), фонарик меняется сам при перегорании (см.
-// updateFlashlightBulb). Пистолет и капкан физически не расходуются мгновенно по
-// нажатию клавиши-use как бинты/аптечка, но жмутся тем же единым способом — выстрел/
-// установка — поэтому тоже в хотбаре.
+// Хотбар предметов (HUD) — у каждого расходуемого предмета своя клавиша; лопата,
+// "Фонарь" и "Пистолет" (владение оружием) сюда не входят — это не "активируемые"
+// предметы: лопата тратится сама при ремонте (InteractionSystem), лампа меняется
+// сама при перегорании (см. updateFlashlightBulb), а пистолет — не расходник, он
+// либо есть, либо нет (хотбар показывает "Патроны", которые реально тают при
+// каждом выстреле). Капкан физически не расходуется мгновенно по нажатию
+// клавиши-use как бинты/аптечка (ставится в мир), но жмётся тем же способом —
+// поэтому тоже в хотбаре.
 const HOTBAR_ITEMS: readonly { id: ItemId; hotkey: string }[] = [
   { id: "bandage", hotkey: "1" },
   { id: "medkit", hotkey: "2" },
   { id: "trap", hotkey: "3" },
-  { id: "pistol", hotkey: "4" },
+  { id: "ammo", hotkey: "4" },
   { id: "key", hotkey: "5" },
 ];
 const BANDAGE_HEAL_PERCENT = 30;
@@ -351,14 +353,14 @@ export class Game {
     return HOTBAR_ITEMS.map(({ id, hotkey }) => ({ id, hotkey, remaining: this.inventory.getRemaining(id) }));
   }
 
-  /** Лампа фонарика (FlashlightSystem) перегорела — тратит весь запас "Запасного
-   *  фонарика" (InventorySystem) на новую. Не тратится частями: проще и честнее
+  /** Лампа фонарика (FlashlightSystem) перегорела — тратит весь запас предмета
+   *  "Фонарь" (InventorySystem) на новую. Не тратится частями: проще и честнее
    *  "поставил один новый" на весь оставшийся запас, чем дробить по секундам. */
   private updateFlashlightBulb(): void {
     if (!this.flashlight.isBulbBurnedOut()) return;
-    const spareSeconds = this.inventory.getRemaining("spareBulb");
+    const spareSeconds = this.inventory.getRemaining("flashlightItem");
     if (spareSeconds <= 0) return;
-    this.inventory.consume("spareBulb", spareSeconds);
+    this.inventory.consume("flashlightItem", spareSeconds);
     this.flashlight.installBulb(spareSeconds);
     this.persistEconomy();
   }
@@ -384,11 +386,13 @@ export class Game {
     this.persistEconomy();
   }
 
-  /** Пистолет — не требует попадания луча в геометрию (нет видимой модели оружия):
-   *  зомби засчитывается целью, если он активен, жив, не дальше PISTOL_RANGE и в
+  /** Пистолет ("Пистолет" — одноразовое владение оружием, "Патроны" — расходник)
+   *  не требует попадания луча в геометрию (нет видимой модели оружия): зомби
+   *  засчитывается целью, если он активен, жив, не дальше PISTOL_RANGE и в
    *  пределах узкого конуса от направления взгляда. */
   private firePistol(): void {
     if (this.inventory.getRemaining("pistol") <= 0) return;
+    if (this.inventory.getRemaining("ammo") <= 0) return;
     if (!this.zombie.isActive() || this.zombie.isDead()) return;
     const zombiePos = this.sceneManager.getZombiePosition();
     if (!zombiePos) return;
@@ -404,7 +408,7 @@ export class Game {
     const toZombie = new THREE.Vector3(dx, 0, dz).normalize();
     if (flatForward.dot(toZombie) < Math.cos(PISTOL_AIM_CONE_RAD)) return;
 
-    this.inventory.consume("pistol", 1);
+    this.inventory.consume("ammo", 1);
     this.zombie.kill();
     this.hud.showHitMarker();
     trackEvent({ name: "pistol_shot" });

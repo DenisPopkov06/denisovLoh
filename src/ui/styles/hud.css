@@ -209,24 +209,11 @@
   opacity: 0.4;
 }
 
+/* Цветные иконки предметов (ui/icons.ts) — свои fill/stroke на путях, CSS их не
+ * навязывает (ровно как .shop__item-svg в shop.css). */
 .hud__hotbar-svg {
-  width: 60%;
-  height: 60%;
-  fill: none;
-  stroke: var(--nk-text);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.hud__hotbar-svg .f {
-  fill: var(--nk-text);
-  stroke: none;
-}
-
-.hud__hotbar-svg .cut {
-  stroke: var(--nk-bg-solid);
-  stroke-width: 2;
+  width: 65%;
+  height: 65%;
 }
 
 .hud__hotbar-key {
