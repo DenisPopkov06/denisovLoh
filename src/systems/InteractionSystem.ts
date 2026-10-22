@@ -13,6 +13,18 @@ const HIGHLIGHT_EMISSIVE = new THREE.Color(0x3a3a1a);
 // пятном без текстуры/теней вместо надгробия. Подсветка не должна перебивать
 // собственное освещение объекта, а лишь слегка подчёркивать его.
 const HIGHLIGHT_INTENSITY = 0.18;
+/** Ключ glTF extras материала (GLTFLoader кладёт его в material.userData): меши с этим материалом — отдельная
+ *  «часть» объекта, которая подсвечивается САМА по себе, а не вместе с остальными мешами той же модели. Так у
+ *  надгробия земля (материал с nk_highlight = "earth", assets_src/blender/grave_mound_props.py) и камень светятся
+ *  по отдельности; взаимодействие (E) при этом по-прежнему идёт с объектом целиком. Без ключа — часть "". */
+const HIGHLIGHT_PART_KEY = "nk_highlight";
+
+function highlightPartOf(mesh: THREE.Mesh): string {
+  const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  const part: unknown = material?.userData?.[HIGHLIGHT_PART_KEY];
+  return typeof part === "string" ? part : "";
+}
+
 const DEFAULT_REPAIR_SEC = 2;
 // Только по горизонтали (XZ), без учёта роста камеры — см. putDownCarried. 2 м
 // (с учётом высоты камеры в 3D-дистанции) принимали постановку практически с любой
@@ -36,6 +48,8 @@ export class InteractionSystem {
   private readonly raycaster = new THREE.Raycaster();
   private readonly centerScreen = new THREE.Vector2(0, 0);
   private focusedRoot: THREE.Object3D | null = null;
+  /** Какая часть объекта в фокусе (см. HIGHLIGHT_PART_KEY): светятся только её мешы. */
+  private focusedPart = "";
   private readonly highlighted: HighlightEntry[] = [];
 
   private repairingInstanceId: string | null = null;
@@ -69,12 +83,16 @@ export class InteractionSystem {
     this.raycaster.far = MAX_INTERACT_DISTANCE;
     const [hit] = this.raycaster.intersectObjects(interactables, true);
     const nextRoot = hit ? this.findInteractableRoot(hit.object, interactables) : null;
+    const nextPart = hit && nextRoot && hit.object instanceof THREE.Mesh ? highlightPartOf(hit.object) : "";
 
-    if (nextRoot !== this.focusedRoot) {
+    if (nextRoot !== this.focusedRoot || nextPart !== this.focusedPart) {
+      const rootChanged = nextRoot !== this.focusedRoot;
       this.clearHighlight();
       this.focusedRoot = nextRoot;
-      if (this.focusedRoot) this.applyHighlight(this.focusedRoot);
-      this.cancelRepair();
+      this.focusedPart = nextPart;
+      if (this.focusedRoot) this.applyHighlight(this.focusedRoot, nextPart);
+      // Переход камень ↔ земля того же надгробия — тот же объект: ремонт с удержанием E не сбрасываем.
+      if (rootChanged) this.cancelRepair();
     }
 
     if (this.repairingInstanceId) {
@@ -185,6 +203,7 @@ export class InteractionSystem {
   private pickUp(object: THREE.Object3D, instanceId: string): void {
     this.clearHighlight();
     this.focusedRoot = null;
+    this.focusedPart = "";
 
     object.removeFromParent();
     object.position.copy(CARRY_OFFSET);
@@ -257,9 +276,9 @@ export class InteractionSystem {
   /** Материалы клонируются только на время подсветки — модели шарят материалы
    *  между инстансами (SceneManager клонирует только граф объектов), поэтому
    *  мутировать оригинал означало бы подсветить сразу все однотипные пропсы. */
-  private applyHighlight(root: THREE.Object3D): void {
+  private applyHighlight(root: THREE.Object3D, part: string): void {
     root.traverse((node) => {
-      if (!(node instanceof THREE.Mesh)) return;
+      if (!(node instanceof THREE.Mesh) || highlightPartOf(node) !== part) return;
 
       this.highlighted.push({ mesh: node, originalMaterial: node.material });
 
